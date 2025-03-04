@@ -92,43 +92,17 @@ DB_HOST=localhost
 DB_PORT=3306
 ```
 
-Install `python-dotenv` to load environment variables:
-```sh
-pip install python-dotenv
-```
-
-### 7. Configure Django to Use Environment Variables
-
-Modify `settings.py` to load variables from `.env`:
-```python
-import os
-from dotenv import load_dotenv
-
-load_dotenv()
-
-DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.mysql',
-        'NAME': os.getenv('DB_NAME'),
-        'USER': os.getenv('DB_USER'),
-        'PASSWORD': os.getenv('DB_PASSWORD'),
-        'HOST': os.getenv('DB_HOST'),
-        'PORT': os.getenv('DB_PORT'),
-    }
-}
-```
-
-### 8. Apply Migrations
+### 7. Apply Migrations
 ```sh
 python manage.py migrate
 ```
 
-### 9. Run the Development Server
+### 8. Run the Development Server
 ```sh
 python manage.py runserver
 ```
 
-### 10. Access the API
+### 9. Access the API
 - Open `http://127.0.0.1:8000/api/` in your browser or use **Postman** to test API endpoints.
 
 ## Notes
