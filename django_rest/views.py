@@ -173,26 +173,30 @@ class LoginView(APIView):
         """
         email = request.data.get("email")
         password = request.data.get("password")
-        user = authenticate(request, email=email, password=password)
-
-        if user:
-            if user.usr_otp_enabled:
-                otp_device = TOTPDevice.objects.filter(user=user, confirmed=True).first()
-                if otp_device:
-                    otp_device.generate_challenge()
-                    return Response({
-                        "otp_required": True, 
-                        "message": "Enter OTP",
-                        "user_type": user.usr_type
-                    }, status=200)
+        
+        try:
+            user = User.objects.get(email=email)
+            if user.check_password(password):
+                if user.otp_enabled:
+                    otp_device = TOTPDevice.objects.filter(user=user, confirmed=True).first()
+                    if otp_device:
+                        otp_device.generate_challenge()
+                        return Response({
+                            "otp_required": True, 
+                            "message": "Enter OTP",
+                            "user_type": user.user_type
+                        }, status=200)
+                
+                refresh = RefreshToken.for_user(user)
+                return Response({
+                    "access": str(refresh.access_token),
+                    "refresh": str(refresh),
+                    "user_type": user.user_type
+                }, status=200)
             
-            refresh = RefreshToken.for_user(user)
-            return Response({
-                "access": str(refresh.access_token),
-                "refresh": str(refresh),
-                "user_type": user.usr_type
-            }, status=200)
-
+        except User.DoesNotExist:
+            pass
+        
         return Response({"error": "Invalid credentials"}, status=401)
     
 class VerifyOTPView(APIView):
@@ -204,7 +208,7 @@ class VerifyOTPView(APIView):
         email = request.data.get("email")
         otp = request.data.get("otp")
         try:
-            user = User.objects.get(usr_email=email)
+            user = User.objects.get(email=email)
         except User.DoesNotExist:
             return Response({"error": "User not found"}, status=404)
 
@@ -213,7 +217,7 @@ class VerifyOTPView(APIView):
             return Response({
                 "access": str(refresh.access_token),
                 "refresh": str(refresh),
-                "user_type": user.usr_type
+                "user_type": user.user_type
             }, status=200)
         else:
             return Response({"error": "Invalid OTP"}, status=400)
@@ -225,7 +229,7 @@ class Enable2FAView(APIView):
     def post(self, request):
         """Enable 2FA and return the OTP secret"""
         user = request.user
-        if user.usr_otp_enabled:
+        if user.otp_enabled:
             return Response({"error": "2FA is already enabled"}, status=400)
         
         otp_secret = user.enable_2fa()
@@ -241,7 +245,7 @@ class Disable2FAView(APIView):
     def post(self, request):
         """Disable 2FA for the current user"""
         user = request.user
-        if not user.usr_otp_enabled:
+        if not user.otp_enabled:
             return Response({"error": "2FA is not enabled"}, status=400)
         
         user.disable_2fa()

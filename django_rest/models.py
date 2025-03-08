@@ -1,14 +1,34 @@
 from django.db import models
 from django_otp.plugins.otp_totp.models import TOTPDevice
-from django.contrib.auth.models import AbstractUser
+from django.contrib.auth.models import AbstractUser, UserManager
 
 # File that defines the database classes
+
+# Custom UserManager for email-based authentication
+class CustomUserManager(UserManager):
+    def create_user(self, email, password=None, **extra_fields):
+        if not email:
+            raise ValueError('The Email field must be set')
+        
+        extra_fields.setdefault('username', email)
+        user = self.model(
+            email=email,
+            **extra_fields
+        )
+        user.set_password(password)
+        user.save(using=self._db)
+        return user
+
+    def create_superuser(self, email, password=None, **extra_fields):
+        extra_fields.setdefault('is_staff', True)
+        extra_fields.setdefault('is_superuser', True)
+        extra_fields.setdefault('user_type', 'admin')
+        return self.create_user(email, password, **extra_fields)
 
 # User model
 class User(AbstractUser):
     """
     Custom User model extending Django's AbstractUser.
-    Adds additional fields for user profile and authentication.
     Uses email as the unique identifier for authentication.
     """
     USER_TYPE_CHOICES = (
@@ -16,33 +36,35 @@ class User(AbstractUser):
         ('user', 'Regular User'),    # Standard user access
     )
     
-    # Custom user profile fields
-    usr_id = models.AutoField(primary_key=True)
-    usr_name = models.CharField(max_length=45)
-    usr_surname = models.CharField(max_length=45)
-    usr_birthdate = models.DateField()
-    usr_email = models.EmailField(unique=True)
-    usr_phone_number = models.CharField(max_length=45)
-    usr_status = models.BooleanField(default=True)  # Active/Inactive status
-    usr_cgu = models.BooleanField(default=False)    # Terms of service acceptance
-    usr_type = models.CharField(max_length=10, choices=USER_TYPE_CHOICES, default='user')
-    usr_stripe_id = models.BigIntegerField(null=True, blank=True)  # For payment integration
-    usr_otp_enabled = models.BooleanField(default=False)  # Two-factor authentication status
+    # Custom fields
+    birthdate = models.DateField(null=True)
+    phone_number = models.CharField(max_length=45, null=True)
+    user_type = models.CharField(max_length=10, choices=USER_TYPE_CHOICES, default='user')
+    status = models.BooleanField(default=True)
+    cgu = models.BooleanField(default=False)    # Terms of service acceptance
+    stripe_id = models.CharField(max_length=100, blank=True, null=True)
+    otp_enabled = models.BooleanField(default=False)
+    
+    # Override email field to make it unique
+    email = models.EmailField(unique=True)
+    
+    # Set custom manager
+    objects = CustomUserManager()
     
     # Authentication settings
-    USERNAME_FIELD = 'usr_email'  # Use email for authentication
-    EMAIL_FIELD = 'usr_email'
-    REQUIRED_FIELDS = ['usr_name', 'usr_surname', 'usr_birthdate', 'usr_phone_number']
+    USERNAME_FIELD = 'email'
+    EMAIL_FIELD = 'email'
+    REQUIRED_FIELDS = ['first_name', 'last_name', 'birthdate', 'phone_number']
 
     class Meta:
         db_table = 'ifa_user'
 
     def __str__(self):
-        return f"{self.usr_name} {self.usr_surname}"
+        return f"{self.first_name} {self.last_name}"
 
     def is_admin(self):
         """Check if user has admin privileges"""
-        return self.usr_type == 'admin'
+        return self.user_type == 'admin'
 
     def generate_otp(self):
         """Generate a new OTP device and return the challenge"""
@@ -56,13 +78,13 @@ class User(AbstractUser):
 
     def enable_2fa(self):
         """Enable two-factor authentication for the user"""
-        self.usr_otp_enabled = True
+        self.otp_enabled = True
         self.save()
         return self.generate_otp()
 
     def disable_2fa(self):
         """Disable two-factor authentication for the user"""
-        self.usr_otp_enabled = False
+        self.otp_enabled = False
         self.save()
         TOTPDevice.objects.filter(user=self).delete()
 

@@ -73,6 +73,8 @@ SIMPLE_JWT = {
     'ROTATE_REFRESH_TOKENS': True,
 }
 
+AUTH_USER_MODEL = 'django_rest.User'
+
 ROOT_URLCONF = 'iyffa_django.urls'
 
 TEMPLATES = [
@@ -152,3 +154,8 @@ STATIC_URL = 'static/'
 # https://docs.djangoproject.com/en/5.1/ref/settings/#default-auto-field
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+
+# Authentication backends
+AUTHENTICATION_BACKENDS = [
+    'django.contrib.auth.backends.ModelBackend',
+]
