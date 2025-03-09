@@ -10,7 +10,6 @@ from rest_framework.decorators import action
 from rest_framework.views import APIView
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.contrib.auth import authenticate
-from django_otp.plugins.otp_totp.models import TOTPDevice
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from django.db.models import Count
 from .models import User, Article, Project, Document, Event, Image, Cotisation, Payment
@@ -19,8 +18,9 @@ from .serializers import (
     EventSerializer, ImageSerializer, CotisationSerializer, PaymentSerializer
 )
 from .permissions import IsAdminUser
+from django.core.mail import send_mail
+import random
 
-# User ViewSet: Standard CRUD operations
 class UserViewSet(viewsets.ModelViewSet):
     """
     ViewSet for managing users.
@@ -51,7 +51,6 @@ class UserViewSet(viewsets.ModelViewSet):
         }
         return Response(stats)
 
-# Article ViewSet: Standard CRUD operations
 class ArticleViewSet(viewsets.ModelViewSet):
     """
     ViewSet for managing articles.
@@ -70,7 +69,6 @@ class ArticleViewSet(viewsets.ModelViewSet):
         """Automatically set the current user as the article author"""
         serializer.save(art_user_id=self.request.user)
 
-# Project ViewSet: Standard CRUD operations
 class ProjectViewSet(viewsets.ModelViewSet):
     """
     ViewSet for managing projects.
@@ -89,7 +87,6 @@ class ProjectViewSet(viewsets.ModelViewSet):
         """Automatically set the current user as the project owner"""
         serializer.save(pro_user_id=self.request.user)
 
-# Document ViewSet: Standard CRUD operations
 class DocumentViewSet(viewsets.ModelViewSet):
     """
     ViewSet for managing project documents.
@@ -104,7 +101,6 @@ class DocumentViewSet(viewsets.ModelViewSet):
             return [IsAuthenticated()]
         return [AllowAny()]
 
-# Event ViewSet: Standard CRUD operations
 class EventViewSet(viewsets.ModelViewSet):
     """
     ViewSet for managing events.
@@ -123,7 +119,6 @@ class EventViewSet(viewsets.ModelViewSet):
         """Automatically set the current user as the event organizer"""
         serializer.save(eve_user_id=self.request.user)
 
-# Image ViewSet: Standard CRUD operations
 class ImageViewSet(viewsets.ModelViewSet):
     """
     ViewSet for managing event images.
@@ -138,7 +133,6 @@ class ImageViewSet(viewsets.ModelViewSet):
             return [IsAuthenticated()]
         return [AllowAny()]
 
-# Cotisation ViewSet: Standard CRUD operations
 class CotisationViewSet(viewsets.ModelViewSet):
     """
     ViewSet for managing user cotisations.
@@ -148,7 +142,6 @@ class CotisationViewSet(viewsets.ModelViewSet):
     serializer_class = CotisationSerializer
     permission_classes = [IsAuthenticated]  # Keep this protected as it's sensitive data
 
-# Payment ViewSet: Standard CRUD operations
 class PaymentViewSet(viewsets.ModelViewSet):
     """
     ViewSet for managing payments.
@@ -160,17 +153,11 @@ class PaymentViewSet(viewsets.ModelViewSet):
 
 ## Auth related views
 class LoginView(APIView):
-    """
-    Handle user login with optional 2FA.
-    Returns JWT tokens upon successful authentication.
-    """
+    """Handle user login with optional 2FA"""
     permission_classes = [AllowAny]
     
     def post(self, request):
-        """
-        Authenticate user and handle 2FA if enabled.
-        Returns JWT tokens or 2FA challenge.
-        """
+        """Authenticate user and handle 2FA if enabled"""
         email = request.data.get("email")
         password = request.data.get("password")
         
@@ -178,14 +165,25 @@ class LoginView(APIView):
             user = User.objects.get(email=email)
             if user.check_password(password):
                 if user.otp_enabled:
-                    otp_device = TOTPDevice.objects.filter(user=user, confirmed=True).first()
-                    if otp_device:
-                        otp_device.generate_challenge()
-                        return Response({
-                            "otp_required": True, 
-                            "message": "Enter OTP",
-                            "user_type": user.user_type
-                        }, status=200)
+                    # Generate and send new OTP
+                    otp = ''.join([str(random.randint(0, 9)) for _ in range(6)])
+                    user.otp_secret = otp
+                    user.save()
+                    
+                    # Send OTP via email
+                    send_mail(
+                        'Your Login Verification Code',
+                        f'Your verification code is: {otp}\nEnter this code to complete your login.',
+                        'noreply@iyffa.com',
+                        [user.email],
+                        fail_silently=False,
+                    )
+                    
+                    return Response({
+                        "otp_required": True,
+                        "message": "Check your email for the verification code",
+                        "user_type": user.user_type
+                    }, status=200)
                 
                 refresh = RefreshToken.for_user(user)
                 return Response({
@@ -198,45 +196,114 @@ class LoginView(APIView):
             pass
         
         return Response({"error": "Invalid credentials"}, status=401)
-    
+
 class VerifyOTPView(APIView):
-    """Handle 2FA OTP verification"""
+    """Handle 2FA OTP verification at every login"""
     permission_classes = [AllowAny]
     
     def post(self, request):
-        """Verify OTP and return JWT tokens if valid"""
+        """Verify email OTP and return JWT tokens if valid"""
         email = request.data.get("email")
         otp = request.data.get("otp")
         try:
             user = User.objects.get(email=email)
+            
+            # Verify OTP
+            if otp == user.otp_secret:
+                # Clear the used OTP
+                user.otp_secret = None
+                user.save()
+                
+                refresh = RefreshToken.for_user(user)
+                return Response({
+                    "access": str(refresh.access_token),
+                    "refresh": str(refresh),
+                    "user_type": user.user_type
+                }, status=200)
+            else:
+                return Response({"error": "Invalid verification code"}, status=400)
+                
         except User.DoesNotExist:
             return Response({"error": "User not found"}, status=404)
-
-        if user.verify_otp(otp):
-            refresh = RefreshToken.for_user(user)
-            return Response({
-                "access": str(refresh.access_token),
-                "refresh": str(refresh),
-                "user_type": user.user_type
-            }, status=200)
-        else:
-            return Response({"error": "Invalid OTP"}, status=400)
 
 class Enable2FAView(APIView):
     """Enable two-factor authentication for a user"""
     permission_classes = [IsAuthenticated]
     
     def post(self, request):
-        """Enable 2FA and return the OTP secret"""
+        """Enable 2FA and send verification code via email"""
         user = request.user
         if user.otp_enabled:
             return Response({"error": "2FA is already enabled"}, status=400)
         
-        otp_secret = user.enable_2fa()
-        return Response({
-            "message": "2FA enabled successfully",
-            "otp_secret": otp_secret
-        }, status=200)
+        # Generate a 6-digit OTP
+        otp = ''.join([str(random.randint(0, 9)) for _ in range(6)])
+        
+        # Store OTP temporarily
+        user.otp_secret = otp
+        user.save()
+        
+        try:
+            # Send OTP via email
+            sent = send_mail(
+                subject='Your 2FA Verification Code',
+                message=f'Your verification code is: {otp}\nEnter this code to complete 2FA setup.',
+                from_email=None,  # Will use DEFAULT_FROM_EMAIL from settings
+                recipient_list=[user.email],
+                fail_silently=False,
+            )
+            
+            if sent == 1:
+                return Response({
+                    "message": "2FA setup initiated. Check your email for the verification code.",
+                    "next_step": "Verify this setup by making a POST request to /api/auth/2fa/verify/ with the code from your email"
+                }, status=200)
+            else:
+                user.otp_secret = None
+                user.save()
+                return Response({
+                    "error": "Failed to send verification code",
+                    "message": "Please try again later"
+                }, status=500)
+                
+        except Exception as e:
+            user.otp_secret = None
+            user.save()
+            return Response({
+                "error": str(e),
+                "message": "Failed to send verification code. Please try again later."
+            }, status=500)
+
+
+class Verify2FASetupView(APIView):
+    """Verify inital 2FA setup with email OTP to complete the setup"""
+    permission_classes = [IsAuthenticated]
+    
+    def post(self, request):
+        """Verify email OTP and complete 2FA setup"""
+        user = request.user
+        otp_code = request.data.get('otp')
+        
+        if not user.otp_secret:
+            return Response({"error": "2FA setup not initiated"}, status=400)
+            
+        if user.otp_enabled:
+            return Response({"error": "2FA is already enabled"}, status=400)
+        
+        # Verify OTP
+        if otp_code == user.otp_secret:
+            user.otp_enabled = True
+            user.otp_secret = None  # Clear the temporary OTP
+            user.save()
+            return Response({
+                "message": "2FA setup completed successfully",
+                "status": "enabled"
+            }, status=200)
+        else:
+            return Response({
+                "error": "Invalid verification code",
+                "message": "Please check the code from your email and try again"
+            }, status=400)
 
 class Disable2FAView(APIView):
     """Disable two-factor authentication for a user"""

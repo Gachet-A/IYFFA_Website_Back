@@ -4,7 +4,7 @@ from rest_framework_simplejwt.views import TokenRefreshView
 from .views import (
     UserViewSet, ArticleViewSet, ProjectViewSet, DocumentViewSet, 
     EventViewSet, ImageViewSet, CotisationViewSet, PaymentViewSet,
-    LoginView, VerifyOTPView, Enable2FAView, Disable2FAView
+    LoginView, VerifyOTPView, Enable2FAView, Disable2FAView, Verify2FASetupView
 )
 
 # Use DefaultRouter to automatically generate API endpoints
@@ -28,5 +28,6 @@ urlpatterns = [
     
     # 2FA management URLs
     path('api/auth/2fa/enable/', Enable2FAView.as_view(), name='enable-2fa'),
+    path('api/auth/2fa/verify/', Verify2FASetupView.as_view(), name='verify-2fa-setup'),
     path('api/auth/2fa/disable/', Disable2FAView.as_view(), name='disable-2fa'),
 ]

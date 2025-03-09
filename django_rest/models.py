@@ -1,5 +1,4 @@
 from django.db import models
-from django_otp.plugins.otp_totp.models import TOTPDevice
 from django.contrib.auth.models import AbstractUser, UserManager
 
 # File that defines the database classes
@@ -44,6 +43,7 @@ class User(AbstractUser):
     cgu = models.BooleanField(default=False)    # Terms of service acceptance
     stripe_id = models.CharField(max_length=100, blank=True, null=True)
     otp_enabled = models.BooleanField(default=False)
+    otp_secret = models.CharField(max_length=16, blank=True, null=True)  # For storing temporary OTP codes
     
     # Override email field to make it unique
     email = models.EmailField(unique=True)
@@ -66,27 +66,11 @@ class User(AbstractUser):
         """Check if user has admin privileges"""
         return self.user_type == 'admin'
 
-    def generate_otp(self):
-        """Generate a new OTP device and return the challenge"""
-        device = TOTPDevice.objects.create(user=self, confirmed=True)
-        return device.generate_challenge()
-
-    def verify_otp(self, otp):
-        """Verify the provided OTP code"""
-        device = TOTPDevice.objects.filter(user=self, confirmed=True).first()
-        return device.verify_token(otp) if device else False
-
-    def enable_2fa(self):
-        """Enable two-factor authentication for the user"""
-        self.otp_enabled = True
-        self.save()
-        return self.generate_otp()
-
     def disable_2fa(self):
         """Disable two-factor authentication for the user"""
         self.otp_enabled = False
+        self.otp_secret = None
         self.save()
-        TOTPDevice.objects.filter(user=self).delete()
 
 # Article model
 class Article(models.Model):
