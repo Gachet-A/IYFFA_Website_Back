@@ -3,7 +3,7 @@ Django REST framework views for handling API endpoints.
 Includes viewsets for all models and authentication views.
 """
 
-from django.shortcuts import render
+from django.shortcuts import render, get_object_or_404
 from rest_framework import viewsets, generics, status
 from rest_framework.response import Response
 from rest_framework.decorators import action
@@ -20,6 +20,7 @@ from .serializers import (
 from .permissions import IsAdminUser
 from django.core.mail import send_mail
 import random
+from django.db import transaction
 
 class UserViewSet(viewsets.ModelViewSet):
     """
@@ -105,6 +106,7 @@ class EventViewSet(viewsets.ModelViewSet):
     """
     ViewSet for managing events.
     Public read access, authenticated write access.
+    Handles event creation with multiple images.
     """
     queryset = Event.objects.all()
     serializer_class = EventSerializer
@@ -115,9 +117,101 @@ class EventViewSet(viewsets.ModelViewSet):
             return [IsAuthenticated()]
         return [AllowAny()]
 
-    def perform_create(self, serializer):
-        """Automatically set the current user as the event organizer"""
-        serializer.save(eve_user_id=self.request.user)
+    @transaction.atomic
+    def create(self, request, *args, **kwargs):
+        """Create event with multiple images"""
+        try:
+            # Create event
+            event_data = {
+                'eve_title': request.data.get('title'),
+                'eve_description': request.data.get('description'),
+                'eve_date': request.data.get('date'),
+                'eve_location': request.data.get('location'),
+                'eve_price': request.data.get('price'),
+                'eve_user_id': request.user
+            }
+            
+            event = Event.objects.create(**event_data)
+            
+            # Handle images
+            images = request.FILES.getlist('images')
+            image_positions = request.data.getlist('image_positions')
+            
+            for image, position in zip(images, image_positions):
+                Image.objects.create(
+                    img_url=image,
+                    img_position=position,
+                    img_event_id=event
+                )
+            
+            serializer = self.get_serializer(event)
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+            
+        except Exception as e:
+            return Response(
+                {'error': str(e)},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+    @transaction.atomic
+    def update(self, request, *args, **kwargs):
+        """Update event and its images"""
+        try:
+            event = self.get_object()
+            
+            # Update event fields
+            event.eve_title = request.data.get('title', event.eve_title)
+            event.eve_description = request.data.get('description', event.eve_description)
+            event.eve_date = request.data.get('date', event.eve_date)
+            event.eve_location = request.data.get('location', event.eve_location)
+            event.eve_price = request.data.get('price', event.eve_price)
+            event.save()
+            
+            # Handle new images if any
+            images = request.FILES.getlist('images')
+            if images:
+                # Delete existing images
+                event.images.all().delete()
+                
+                # Add new images
+                image_positions = request.data.getlist('image_positions')
+                for image, position in zip(images, image_positions):
+                    Image.objects.create(
+                        img_url=image,
+                        img_position=position,
+                        img_event_id=event
+                    )
+            
+            serializer = self.get_serializer(event)
+            return Response(serializer.data)
+            
+        except Exception as e:
+            return Response(
+                {'error': str(e)},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+    @action(detail=True, methods=['delete'])
+    def delete_image(self, request, pk=None):
+        """Delete a specific image from an event"""
+        event = self.get_object()
+        image_id = request.data.get('image_id')
+        
+        if not image_id:
+            return Response(
+                {'error': 'Image ID is required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+            
+        try:
+            image = Image.objects.get(img_id=image_id, img_event_id=event)
+            image.delete()
+            return Response(status=status.HTTP_204_NO_CONTENT)
+        except Image.DoesNotExist:
+            return Response(
+                {'error': 'Image not found'},
+                status=status.HTTP_404_NOT_FOUND
+            )
 
 class ImageViewSet(viewsets.ModelViewSet):
     """
@@ -132,6 +226,33 @@ class ImageViewSet(viewsets.ModelViewSet):
         if self.action in ['create', 'update', 'partial_update', 'destroy']:
             return [IsAuthenticated()]
         return [AllowAny()]
+        
+    def create(self, request, *args, **kwargs):
+        """Create a new image for an event"""
+        try:
+            event_id = request.data.get('event_id')
+            if not event_id:
+                return Response(
+                    {'error': 'Event ID is required'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+                
+            event = get_object_or_404(Event, eve_id=event_id)
+            
+            image = Image.objects.create(
+                img_url=request.FILES['image'],
+                img_position=request.data.get('position', 0),
+                img_event_id=event
+            )
+            
+            serializer = self.get_serializer(image)
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+            
+        except Exception as e:
+            return Response(
+                {'error': str(e)},
+                status=status.HTTP_400_BAD_REQUEST
+            )
 
 class CotisationViewSet(viewsets.ModelViewSet):
     """
@@ -182,14 +303,26 @@ class LoginView(APIView):
                     return Response({
                         "otp_required": True,
                         "message": "Check your email for the verification code",
-                        "user_type": user.user_type
+                        "user": {
+                            "id": user.id,
+                            "email": user.email,
+                            "name": user.first_name,
+                            "surname": user.last_name,
+                            "user_type": user.user_type
+                        }
                     }, status=200)
                 
                 refresh = RefreshToken.for_user(user)
                 return Response({
                     "access": str(refresh.access_token),
                     "refresh": str(refresh),
-                    "user_type": user.user_type
+                    "user": {
+                        "id": user.id,
+                        "email": user.email,
+                        "name": user.first_name,
+                        "surname": user.last_name,
+                        "user_type": user.user_type
+                    }
                 }, status=200)
             
         except User.DoesNotExist:
@@ -218,7 +351,13 @@ class VerifyOTPView(APIView):
                 return Response({
                     "access": str(refresh.access_token),
                     "refresh": str(refresh),
-                    "user_type": user.user_type
+                    "user": {
+                        "id": user.id,
+                        "email": user.email,
+                        "name": user.first_name,
+                        "surname": user.last_name,
+                        "user_type": user.user_type
+                    }
                 }, status=200)
             else:
                 return Response({"error": "Invalid verification code"}, status=400)

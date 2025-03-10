@@ -48,26 +48,81 @@ class DocumentSerializer(serializers.ModelSerializer):
     class Meta:
         model = Document
         fields = '__all__'
+        
+# Image Serializer
+class ImageSerializer(serializers.ModelSerializer):
+    """Serializer for event images"""
+    class Meta:
+        model = Image
+        fields = ['img_id', 'img_url', 'img_position']
+        read_only_fields = ['img_id']
 
 # Event Serializer
 class EventSerializer(serializers.ModelSerializer):
-    """
-    Serializer for Event model.
-    Handles event details, scheduling, and pricing.
-    """
+    """Serializer for events with nested images"""
+    images = ImageSerializer(many=True, read_only=True)
+    uploaded_images = serializers.ListField(
+        child=serializers.ImageField(),
+        write_only=True,
+        required=False
+    )
+    image_positions = serializers.ListField(
+        child=serializers.IntegerField(),
+        write_only=True,
+        required=False
+    )
+    
     class Meta:
         model = Event
-        fields = '__all__'
+        fields = [
+            'eve_id', 'eve_title', 'eve_description', 'eve_date',
+            'eve_location', 'eve_price', 'eve_user_id',
+            'images', 'uploaded_images', 'image_positions'
+        ]
+        read_only_fields = ['eve_id', 'eve_user_id']
 
-# Image Serializer
-class ImageSerializer(serializers.ModelSerializer):
-    """
-    Serializer for Image model.
-    Handles event image metadata and positioning.
-    """
-    class Meta:
-        model = Image
-        fields = '__all__'
+    def create(self, validated_data):
+        """Handle event creation with images"""
+        uploaded_images = validated_data.pop('uploaded_images', [])
+        image_positions = validated_data.pop('image_positions', [])
+        
+        # Create event
+        event = Event.objects.create(**validated_data)
+        
+        # Create images
+        for image, position in zip(uploaded_images, image_positions):
+            Image.objects.create(
+                img_url=image,
+                img_position=position,
+                img_event_id=event
+            )
+        
+        return event
+
+    def update(self, instance, validated_data):
+        """Handle event update with images"""
+        uploaded_images = validated_data.pop('uploaded_images', None)
+        image_positions = validated_data.pop('image_positions', None)
+        
+        # Update event fields
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+        instance.save()
+        
+        # Handle image updates if new images are provided
+        if uploaded_images is not None:
+            # Delete existing images
+            instance.images.all().delete()
+            
+            # Create new images
+            for image, position in zip(uploaded_images, image_positions):
+                Image.objects.create(
+                    img_url=image,
+                    img_position=position,
+                    img_event_id=instance
+                )
+        
+        return instance
 
 # Cotisation Serializer
 class CotisationSerializer(serializers.ModelSerializer):

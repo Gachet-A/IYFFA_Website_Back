@@ -54,11 +54,34 @@ MIDDLEWARE = [
     'django.contrib.messages.middleware.MessageMiddleware',
 ]
 
+# Media files (Uploaded files)
+MEDIA_URL = '/media/'
+MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
+
 # CORS settings
 CORS_ALLOW_ALL_ORIGINS = True  # Only for development
 CORS_ALLOW_CREDENTIALS = True
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:5173",
+]
+CORS_ALLOW_METHODS = [
+    'DELETE',
+    'GET',
+    'OPTIONS',
+    'PATCH',
+    'POST',
+    'PUT',
+]
+CORS_ALLOW_HEADERS = [
+    'accept',
+    'accept-encoding',
+    'authorization',
+    'content-type',
+    'dnt',
+    'origin',
+    'user-agent',
+    'x-csrftoken',
+    'x-requested-with',
 ]
 
 REST_FRAMEWORK = {
@@ -146,3 +169,7 @@ EMAIL_HOST_PASSWORD = '64b1c39e3a5946'
 EMAIL_PORT = 587
 EMAIL_USE_TLS = True
 DEFAULT_FROM_EMAIL = 'noreply@iyffa.com'
+
+# File Upload Settings
+FILE_UPLOAD_MAX_MEMORY_SIZE = 5242880  # 5MB
+FILE_UPLOAD_PERMISSIONS = 0o644
