@@ -75,7 +75,8 @@ class EventSerializer(serializers.ModelSerializer):
     class Meta:
         model = Event
         fields = [
-            'eve_id', 'eve_title', 'eve_description', 'eve_date',
+            'eve_id', 'eve_title', 'eve_description', 
+            'eve_start_datetime', 'eve_end_datetime',
             'eve_location', 'eve_price', 'eve_user_id',
             'images', 'uploaded_images', 'image_positions'
         ]

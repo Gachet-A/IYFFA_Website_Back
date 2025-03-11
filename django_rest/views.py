@@ -125,7 +125,8 @@ class EventViewSet(viewsets.ModelViewSet):
             event_data = {
                 'eve_title': request.data.get('title'),
                 'eve_description': request.data.get('description'),
-                'eve_date': request.data.get('date'),
+                'eve_start_datetime': request.data.get('eve_start_datetime'),
+                'eve_end_datetime': request.data.get('eve_end_datetime'),
                 'eve_location': request.data.get('location'),
                 'eve_price': request.data.get('price'),
                 'eve_user_id': request.user
@@ -162,19 +163,20 @@ class EventViewSet(viewsets.ModelViewSet):
             # Update event fields
             event.eve_title = request.data.get('title', event.eve_title)
             event.eve_description = request.data.get('description', event.eve_description)
-            event.eve_date = request.data.get('date', event.eve_date)
+            event.eve_start_datetime = request.data.get('start_datetime', event.eve_start_datetime)
+            event.eve_end_datetime = request.data.get('end_datetime', event.eve_end_datetime)
             event.eve_location = request.data.get('location', event.eve_location)
             event.eve_price = request.data.get('price', event.eve_price)
             event.save()
             
             # Handle new images if any
-            images = request.FILES.getlist('images')
-            if images:
+            if 'images' in request.FILES:
                 # Delete existing images
                 event.images.all().delete()
                 
                 # Add new images
-                image_positions = request.data.getlist('image_positions')
+                images = request.FILES.getlist('images')
+                image_positions = request.data.getlist('image_positions', [str(i) for i in range(len(images))])
                 for image, position in zip(images, image_positions):
                     Image.objects.create(
                         img_url=image,

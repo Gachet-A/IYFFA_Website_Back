@@ -130,7 +130,8 @@ class Event(models.Model):
     eve_id = models.AutoField(primary_key=True)
     eve_title = models.CharField(max_length=45)
     eve_description = models.TextField()
-    eve_date = models.DateField()
+    eve_start_datetime = models.DateTimeField()  # Required field for start date and time
+    eve_end_datetime = models.DateTimeField(null=True, blank=True)  # Optional field for end date and time
     eve_location = models.CharField(max_length=255)
     eve_price = models.FloatField()
     eve_user_id = models.ForeignKey(User, on_delete=models.CASCADE, db_column="usr_id")
