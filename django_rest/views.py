@@ -123,13 +123,13 @@ class EventViewSet(viewsets.ModelViewSet):
         try:
             # Create event
             event_data = {
-                'eve_title': request.data.get('title'),
-                'eve_description': request.data.get('description'),
-                'eve_start_datetime': request.data.get('eve_start_datetime'),
-                'eve_end_datetime': request.data.get('eve_end_datetime'),
-                'eve_location': request.data.get('location'),
-                'eve_price': request.data.get('price'),
-                'eve_user_id': request.user
+                'title': request.data.get('title'),
+                'description': request.data.get('description'),
+                'start_datetime': request.data.get('start_datetime'),
+                'end_datetime': request.data.get('end_datetime'),
+                'location': request.data.get('location'),
+                'price': request.data.get('price'),
+                'user_id': request.user
             }
             
             event = Event.objects.create(**event_data)
@@ -140,9 +140,9 @@ class EventViewSet(viewsets.ModelViewSet):
             
             for image, position in zip(images, image_positions):
                 Image.objects.create(
-                    img_url=image,
-                    img_position=position,
-                    img_event_id=event
+                    file=image,
+                    position=position,
+                    event_id=event
                 )
             
             serializer = self.get_serializer(event)
@@ -161,12 +161,12 @@ class EventViewSet(viewsets.ModelViewSet):
             event = self.get_object()
             
             # Update event fields
-            event.eve_title = request.data.get('title', event.eve_title)
-            event.eve_description = request.data.get('description', event.eve_description)
-            event.eve_start_datetime = request.data.get('start_datetime', event.eve_start_datetime)
-            event.eve_end_datetime = request.data.get('end_datetime', event.eve_end_datetime)
-            event.eve_location = request.data.get('location', event.eve_location)
-            event.eve_price = request.data.get('price', event.eve_price)
+            event.title = request.data.get('title', event.title)
+            event.description = request.data.get('description', event.description)
+            event.start_datetime = request.data.get('start_datetime', event.start_datetime)
+            event.end_datetime = request.data.get('end_datetime', event.end_datetime)
+            event.location = request.data.get('location', event.location)
+            event.price = request.data.get('price', event.price)
             event.save()
             
             # Handle new images if any
@@ -179,9 +179,9 @@ class EventViewSet(viewsets.ModelViewSet):
                 image_positions = request.data.getlist('image_positions', [str(i) for i in range(len(images))])
                 for image, position in zip(images, image_positions):
                     Image.objects.create(
-                        img_url=image,
-                        img_position=position,
-                        img_event_id=event
+                        file=image,
+                        position=position,
+                        event_id=event
                     )
             
             serializer = self.get_serializer(event)
@@ -206,7 +206,7 @@ class EventViewSet(viewsets.ModelViewSet):
             )
             
         try:
-            image = Image.objects.get(img_id=image_id, img_event_id=event)
+            image = Image.objects.get(id=image_id, event_id=event)
             image.delete()
             return Response(status=status.HTTP_204_NO_CONTENT)
         except Image.DoesNotExist:
@@ -239,12 +239,12 @@ class ImageViewSet(viewsets.ModelViewSet):
                     status=status.HTTP_400_BAD_REQUEST
                 )
                 
-            event = get_object_or_404(Event, eve_id=event_id)
+            event = get_object_or_404(Event, id=event_id)
             
             image = Image.objects.create(
-                img_url=request.FILES['image'],
-                img_position=request.data.get('position', 0),
-                img_event_id=event
+                file=request.FILES['image'],
+                position=request.data.get('position', 0),
+                event_id=event
             )
             
             serializer = self.get_serializer(image)

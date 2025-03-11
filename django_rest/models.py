@@ -37,6 +37,7 @@ class User(AbstractUser):
     
     # Custom fields
     birthdate = models.DateField(null=True)
+    email = models.EmailField(unique=True)
     phone_number = models.CharField(max_length=45, null=True)
     user_type = models.CharField(max_length=10, choices=USER_TYPE_CHOICES, default='user')
     status = models.BooleanField(default=True)
@@ -44,9 +45,6 @@ class User(AbstractUser):
     stripe_id = models.CharField(max_length=100, blank=True, null=True)
     otp_enabled = models.BooleanField(default=False)
     otp_secret = models.CharField(max_length=16, blank=True, null=True)  # For storing temporary OTP codes
-    
-    # Override email field to make it unique
-    email = models.EmailField(unique=True)
     
     # Set custom manager
     objects = CustomUserManager()
@@ -78,11 +76,11 @@ class Article(models.Model):
     Article model for managing blog posts or news articles.
     Each article is associated with a user and has basic content fields.
     """
-    art_id = models.AutoField(primary_key=True)
-    art_title = models.CharField(max_length=255)
-    art_text = models.TextField()
-    art_creation_time = models.DateTimeField(auto_now_add=True)
-    art_user_id = models.ForeignKey(User, on_delete=models.CASCADE, db_column="usr_id")
+    id = models.AutoField(primary_key=True)
+    title = models.CharField(max_length=255)
+    text = models.TextField()
+    creation_time = models.DateTimeField(auto_now_add=True)
+    user_id = models.ForeignKey(User, on_delete=models.CASCADE, db_column="id")
 
     class Meta:
         db_table = 'ifa_article'
@@ -96,11 +94,11 @@ class Project(models.Model):
     Project model for managing user projects.
     Includes budget tracking and project details.
     """
-    pro_id = models.AutoField(primary_key=True)
-    pro_title = models.CharField(max_length=45)
-    pro_description = models.TextField()
-    pro_budget = models.FloatField()
-    pro_user_id = models.ForeignKey(User, on_delete=models.CASCADE, db_column="usr_id")
+    id = models.AutoField(primary_key=True)
+    title = models.CharField(max_length=45)
+    description = models.TextField()
+    budget = models.FloatField()
+    user_id = models.ForeignKey(User, on_delete=models.CASCADE, db_column="id")
 
     class Meta:
         db_table = 'ifa_project'
@@ -114,9 +112,9 @@ class Document(models.Model):
     Document model for storing project-related files.
     Links documents to specific projects.
     """
-    doc_id = models.AutoField(primary_key=True)
-    doc_url = models.CharField(max_length=255)
-    pro_user_id = models.ForeignKey(Project, on_delete=models.CASCADE, db_column="pro_id")
+    id = models.AutoField(primary_key=True)
+    url = models.CharField(max_length=255)
+    user_id = models.ForeignKey(Project, on_delete=models.CASCADE, db_column="id")
 
     class Meta:
         db_table = 'ifa_document'
@@ -127,14 +125,14 @@ class Event(models.Model):
     Event model for managing organization events.
     Includes event details, location, and pricing information.
     """
-    eve_id = models.AutoField(primary_key=True)
-    eve_title = models.CharField(max_length=45)
-    eve_description = models.TextField()
-    eve_start_datetime = models.DateTimeField()  # Required field for start date and time
-    eve_end_datetime = models.DateTimeField(null=True, blank=True)  # Optional field for end date and time
-    eve_location = models.CharField(max_length=255)
-    eve_price = models.FloatField()
-    eve_user_id = models.ForeignKey(User, on_delete=models.CASCADE, db_column="usr_id")
+    id = models.AutoField(primary_key=True)
+    title = models.CharField(max_length=45)
+    description = models.TextField()
+    start_datetime = models.DateTimeField()  # Required field for start date and time
+    end_datetime = models.DateTimeField(null=True, blank=True)  # Optional field for end date and time
+    location = models.CharField(max_length=255)
+    price = models.FloatField()
+    user_id = models.ForeignKey(User, on_delete=models.CASCADE, db_column="id")
 
     class Meta:
         db_table = 'ifa_event'
@@ -144,34 +142,48 @@ class Event(models.Model):
 
 # Image model
 class Image(models.Model):
-    img_id = models.AutoField(primary_key=True)  # Auto-incrementing PK
-    img_url = models.CharField(max_length=255)
-    img_position = models.IntegerField(10)
-    img_event_id = models.ForeignKey(Event, on_delete=models.CASCADE, db_column="eve_id")  # Foreign Key to ifa_event
+    id = models.AutoField(primary_key=True)
+    file = models.ImageField(upload_to='events/%Y/%m/%d/', max_length=255)
+    position = models.IntegerField(default=0)
+    alt_text = models.CharField(max_length=255, blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    event_id = models.ForeignKey(Event, on_delete=models.CASCADE, db_column="eve_id", related_name='images')
+
 
     class Meta:
-        db_table = 'ifa_image' # Define table name
+        db_table = 'ifa_image'
+        ordering = ['position']
+
+    def __str__(self):
+        return f"Image {self.id} for {self.event_id.title}"
+
+    def delete(self, *args, **kwargs):
+        # Delete the actual file when the model instance is deleted
+        if self.file:
+            self.file.delete(save=False)
+        super().delete(*args, **kwargs)
 
 # Cotisation model 
 class Cotisation(models.Model):
-    cot_id = models.AutoField(primary_key=True)  # Auto-incrementing PK
-    cot_type = models.CharField(max_length=45)
-    cot_amount = models.FloatField()
-    cot_user_id = models.ForeignKey(User, on_delete=models.CASCADE, db_column="usr_id")  # Foreign Key to ifa_user
+    id = models.AutoField(primary_key=True)  # Auto-incrementing PK
+    type = models.CharField(max_length=45)
+    amount = models.FloatField()
+    user_id = models.ForeignKey(User, on_delete=models.CASCADE, db_column="id")  # Foreign Key to ifa_user
 
     class Meta:
         db_table = 'ifa_cotisation' # Define table name
 
 # Payment table
 class Payment(models.Model):
-    pay_id = models.AutoField(primary_key=True)  # Auto-incrementing PK
-    pay_creation_time = models.DateTimeField(auto_now_add=True)  # Timestamp
-    pay_amount = models.FloatField()
-    pay_stripe_id = models.BigIntegerField()
-    pay_status = models.CharField(max_length=45)
-    pay_currency = models.CharField(max_length=45)
-    pay_event_id = models.ForeignKey(Event, on_delete=models.CASCADE, db_column="eve_id")  # Foreign Key to ifa_event
-    pay_cot_id = models.ForeignKey(Cotisation, on_delete=models.CASCADE, db_column="cot_id")  # Foreign Key to ifa_cotisation
+    id = models.AutoField(primary_key=True)  # Auto-incrementing PK
+    creation_time = models.DateTimeField(auto_now_add=True)  # Timestamp
+    amount = models.FloatField()
+    stripe_id = models.BigIntegerField()
+    status = models.CharField(max_length=45)
+    currency = models.CharField(max_length=45)
+    event_id = models.ForeignKey(Event, on_delete=models.CASCADE, db_column="id")  # Foreign Key to ifa_event
+    cot_id = models.ForeignKey(Cotisation, on_delete=models.CASCADE, db_column="id")  # Foreign Key to ifa_cotisation
 
     class Meta:
         db_table = 'ifa_payment'

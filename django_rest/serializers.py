@@ -54,8 +54,8 @@ class ImageSerializer(serializers.ModelSerializer):
     """Serializer for event images"""
     class Meta:
         model = Image
-        fields = ['img_id', 'img_url', 'img_position']
-        read_only_fields = ['img_id']
+        fields = ['id', 'url', 'position']
+        read_only_fields = ['id']
 
 # Event Serializer
 class EventSerializer(serializers.ModelSerializer):
@@ -75,12 +75,12 @@ class EventSerializer(serializers.ModelSerializer):
     class Meta:
         model = Event
         fields = [
-            'eve_id', 'eve_title', 'eve_description', 
-            'eve_start_datetime', 'eve_end_datetime',
-            'eve_location', 'eve_price', 'eve_user_id',
+            'id', 'title', 'description', 
+            'start_datetime', 'end_datetime',
+            'location', 'price', 'user_id',
             'images', 'uploaded_images', 'image_positions'
         ]
-        read_only_fields = ['eve_id', 'eve_user_id']
+        read_only_fields = ['id', 'user_id']
 
     def create(self, validated_data):
         """Handle event creation with images"""
@@ -93,9 +93,9 @@ class EventSerializer(serializers.ModelSerializer):
         # Create images
         for image, position in zip(uploaded_images, image_positions):
             Image.objects.create(
-                img_url=image,
-                img_position=position,
-                img_event_id=event
+                url=image,
+                position=position,
+                event_id=event
             )
         
         return event
@@ -118,9 +118,9 @@ class EventSerializer(serializers.ModelSerializer):
             # Create new images
             for image, position in zip(uploaded_images, image_positions):
                 Image.objects.create(
-                    img_url=image,
-                    img_position=position,
-                    img_event_id=instance
+                    url=image,
+                    position=position,
+                    event_id=instance
                 )
         
         return instance
