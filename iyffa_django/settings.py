@@ -88,6 +88,9 @@ REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (
         'rest_framework_simplejwt.authentication.JWTAuthentication',
     ),
+    'DEFAULT_PERMISSION_CLASSES': (
+        'rest_framework.permissions.AllowAny',
+    ),
 }
 
 SIMPLE_JWT = {
@@ -97,6 +100,11 @@ SIMPLE_JWT = {
 }
 
 AUTH_USER_MODEL = 'django_rest.User'
+
+# Authentication backends
+AUTHENTICATION_BACKENDS = [
+    'django.contrib.auth.backends.ModelBackend',
+]
 
 ROOT_URLCONF = 'iyffa_django.urls'
 

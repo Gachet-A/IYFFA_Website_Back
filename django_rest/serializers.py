@@ -52,10 +52,18 @@ class DocumentSerializer(serializers.ModelSerializer):
 # Image Serializer
 class ImageSerializer(serializers.ModelSerializer):
     """Serializer for event images"""
+    img_url = serializers.SerializerMethodField()
+
     class Meta:
         model = Image
-        fields = ['id', 'url', 'position']
+        fields = ['id', 'img_url', 'position']
         read_only_fields = ['id']
+
+    def get_img_url(self, obj):
+        request = self.context.get('request')
+        if obj.file and hasattr(obj.file, 'url'):
+            return request.build_absolute_uri(obj.file.url)
+        return None
 
 # Event Serializer
 class EventSerializer(serializers.ModelSerializer):

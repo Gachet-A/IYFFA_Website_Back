@@ -80,13 +80,13 @@ class Article(models.Model):
     title = models.CharField(max_length=255)
     text = models.TextField()
     creation_time = models.DateTimeField(auto_now_add=True)
-    user_id = models.ForeignKey(User, on_delete=models.CASCADE, db_column="id")
+    user_id = models.ForeignKey(User, on_delete=models.CASCADE, db_column="user_id")
 
     class Meta:
         db_table = 'ifa_article'
 
     def __str__(self):
-        return self.art_title
+        return self.title
 
 # Project model
 class Project(models.Model):
@@ -98,13 +98,13 @@ class Project(models.Model):
     title = models.CharField(max_length=45)
     description = models.TextField()
     budget = models.FloatField()
-    user_id = models.ForeignKey(User, on_delete=models.CASCADE, db_column="id")
+    user_id = models.ForeignKey(User, on_delete=models.CASCADE, db_column="user_id")
 
     class Meta:
         db_table = 'ifa_project'
 
     def __str__(self):
-        return self.pro_title
+        return self.title
 
 # Document model
 class Document(models.Model):
@@ -114,7 +114,7 @@ class Document(models.Model):
     """
     id = models.AutoField(primary_key=True)
     url = models.CharField(max_length=255)
-    user_id = models.ForeignKey(Project, on_delete=models.CASCADE, db_column="id")
+    user_id = models.ForeignKey(Project, on_delete=models.CASCADE, db_column="project_id")
 
     class Meta:
         db_table = 'ifa_document'
@@ -132,24 +132,23 @@ class Event(models.Model):
     end_datetime = models.DateTimeField(null=True, blank=True)  # Optional field for end date and time
     location = models.CharField(max_length=255)
     price = models.FloatField()
-    user_id = models.ForeignKey(User, on_delete=models.CASCADE, db_column="id")
+    user_id = models.ForeignKey(User, on_delete=models.CASCADE, db_column="user_id")
 
     class Meta:
         db_table = 'ifa_event'
 
     def __str__(self):
-        return self.eve_title
+        return self.title
 
 # Image model
 class Image(models.Model):
     id = models.AutoField(primary_key=True)
-    file = models.ImageField(upload_to='events/%Y/%m/%d/', max_length=255)
+    file = models.ImageField(upload_to='media/', max_length=255)
     position = models.IntegerField(default=0)
     alt_text = models.CharField(max_length=255, blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
-    event_id = models.ForeignKey(Event, on_delete=models.CASCADE, db_column="eve_id", related_name='images')
-
+    event_id = models.ForeignKey(Event, on_delete=models.CASCADE, db_column="event_id", related_name='images')
 
     class Meta:
         db_table = 'ifa_image'
@@ -169,7 +168,7 @@ class Cotisation(models.Model):
     id = models.AutoField(primary_key=True)  # Auto-incrementing PK
     type = models.CharField(max_length=45)
     amount = models.FloatField()
-    user_id = models.ForeignKey(User, on_delete=models.CASCADE, db_column="id")  # Foreign Key to ifa_user
+    user_id = models.ForeignKey(User, on_delete=models.CASCADE, db_column="user_id")
 
     class Meta:
         db_table = 'ifa_cotisation' # Define table name
@@ -182,8 +181,8 @@ class Payment(models.Model):
     stripe_id = models.BigIntegerField()
     status = models.CharField(max_length=45)
     currency = models.CharField(max_length=45)
-    event_id = models.ForeignKey(Event, on_delete=models.CASCADE, db_column="id")  # Foreign Key to ifa_event
-    cot_id = models.ForeignKey(Cotisation, on_delete=models.CASCADE, db_column="id")  # Foreign Key to ifa_cotisation
+    event_id = models.ForeignKey(Event, on_delete=models.CASCADE, db_column="event_id")
+    cot_id = models.ForeignKey(Cotisation, on_delete=models.CASCADE, db_column="cotisation_id")
 
     class Meta:
         db_table = 'ifa_payment'

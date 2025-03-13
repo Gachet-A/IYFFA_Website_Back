@@ -117,6 +117,11 @@ class EventViewSet(viewsets.ModelViewSet):
             return [IsAuthenticated()]
         return [AllowAny()]
 
+    def get_serializer_context(self):
+        context = super().get_serializer_context()
+        context['request'] = self.request
+        return context
+
     @transaction.atomic
     def create(self, request, *args, **kwargs):
         """Create event with multiple images"""
@@ -285,8 +290,8 @@ class LoginView(APIView):
         password = request.data.get("password")
         
         try:
-            user = User.objects.get(email=email)
-            if user.check_password(password):
+            user = authenticate(email=email, password=password)
+            if user is not None:
                 if user.otp_enabled:
                     # Generate and send new OTP
                     otp = ''.join([str(random.randint(0, 9)) for _ in range(6)])
@@ -327,7 +332,7 @@ class LoginView(APIView):
                     }
                 }, status=200)
             
-        except User.DoesNotExist:
+        except Exception as e:
             pass
         
         return Response({"error": "Invalid credentials"}, status=401)
