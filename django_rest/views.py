@@ -131,11 +131,15 @@ class EventViewSet(viewsets.ModelViewSet):
                 'title': request.data.get('title'),
                 'description': request.data.get('description'),
                 'start_datetime': request.data.get('start_datetime'),
-                'end_datetime': request.data.get('end_datetime'),
                 'location': request.data.get('location'),
                 'price': request.data.get('price'),
                 'user_id': request.user
             }
+            
+            # Handle end_datetime separately
+            end_datetime = request.data.get('end_datetime')
+            if end_datetime and end_datetime != "":
+                event_data['end_datetime'] = end_datetime
             
             event = Event.objects.create(**event_data)
             
@@ -169,7 +173,14 @@ class EventViewSet(viewsets.ModelViewSet):
             event.title = request.data.get('title', event.title)
             event.description = request.data.get('description', event.description)
             event.start_datetime = request.data.get('start_datetime', event.start_datetime)
-            event.end_datetime = request.data.get('end_datetime', event.end_datetime)
+            
+            # Handle end_datetime specifically
+            end_datetime = request.data.get('end_datetime')
+            if end_datetime == "":
+                event.end_datetime = None  # Set to None when empty string is received
+            elif end_datetime:
+                event.end_datetime = end_datetime
+            
             event.location = request.data.get('location', event.location)
             event.price = request.data.get('price', event.price)
             event.save()
@@ -218,6 +229,35 @@ class EventViewSet(viewsets.ModelViewSet):
             return Response(
                 {'error': 'Image not found'},
                 status=status.HTTP_404_NOT_FOUND
+            )
+
+    def destroy(self, request, *args, **kwargs):
+        """Delete an event and its associated images"""
+        try:
+            event = self.get_object()
+            
+            # Optional: Add additional permission check
+            if not request.user.is_admin() and event.user_id != request.user:
+                return Response(
+                    {"error": "You don't have permission to delete this event"},
+                    status=status.HTTP_403_FORBIDDEN
+                )
+
+            # Delete associated images first
+            event.images.all().delete()
+            
+            # Delete the event
+            event.delete()
+            
+            return Response(
+                {"message": "Event deleted successfully"},
+                status=status.HTTP_204_NO_CONTENT
+            )
+            
+        except Exception as e:
+            return Response(
+                {'error': str(e)},
+                status=status.HTTP_400_BAD_REQUEST
             )
 
 class ImageViewSet(viewsets.ModelViewSet):
@@ -284,19 +324,22 @@ class LoginView(APIView):
     """Handle user login with optional 2FA"""
     permission_classes = [AllowAny]
     
+    @transaction.atomic
     def post(self, request):
-        """Authenticate user and handle 2FA if enabled"""
+        """Authenticate user and handle 2FA"""
         email = request.data.get("email")
         password = request.data.get("password")
         
         try:
-            user = authenticate(email=email, password=password)
-            if user is not None:
+            user = User.objects.get(email=email)
+            
+            if user.check_password(password):
                 if user.otp_enabled:
-                    # Generate and send new OTP
+                    # Generate new OTP
                     otp = ''.join([str(random.randint(0, 9)) for _ in range(6)])
-                    user.otp_secret = otp
-                    user.save()
+                    
+                    # Update user's OTP
+                    User.objects.filter(id=user.id).update(otp_secret=otp)
                     
                     # Send OTP via email
                     send_mail(
@@ -317,7 +360,7 @@ class LoginView(APIView):
                             "surname": user.last_name,
                             "user_type": user.user_type
                         }
-                    }, status=200)
+                    })
                 
                 refresh = RefreshToken.for_user(user)
                 return Response({
@@ -330,12 +373,12 @@ class LoginView(APIView):
                         "surname": user.last_name,
                         "user_type": user.user_type
                     }
-                }, status=200)
+                })
             
-        except Exception as e:
-            pass
-        
-        return Response({"error": "Invalid credentials"}, status=401)
+            return Response({"error": "Invalid credentials"}, status=401)
+            
+        except User.DoesNotExist:
+            return Response({"error": "Invalid credentials"}, status=401)
 
 class VerifyOTPView(APIView):
     """Handle 2FA OTP verification at every login"""
