@@ -21,13 +21,25 @@ class UserSerializer(serializers.ModelSerializer):
 
 # Article Serializer
 class ArticleSerializer(serializers.ModelSerializer):
-    """
-    Serializer for Article model.
-    Handles article content and metadata.
-    """
+    """Serializer for articles with author details"""
+    author_name = serializers.SerializerMethodField()
+    author_title = serializers.SerializerMethodField()
+    formatted_date = serializers.SerializerMethodField()
+
     class Meta:
         model = Article
-        fields = '__all__'  # Includes all fields
+        fields = ['id', 'title', 'text', 'creation_time', 'user_id', 
+                 'author_name', 'author_title', 'formatted_date']
+        read_only_fields = ['id', 'user_id', 'creation_time']
+
+    def get_author_name(self, obj):
+        return f"{obj.user_id.first_name} {obj.user_id.last_name}"
+
+    def get_author_title(self, obj):
+        return "Admin" if obj.user_id.is_admin() else "Member"
+
+    def get_formatted_date(self, obj):
+        return obj.creation_time.strftime("%B %d, %Y")
 
 # Project Serializer
 class ProjectSerializer(serializers.ModelSerializer):

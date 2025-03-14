@@ -66,9 +66,49 @@ class ArticleViewSet(viewsets.ModelViewSet):
             return [IsAuthenticated()]
         return [AllowAny()]
 
-    def perform_create(self, serializer):
-        """Automatically set the current user as the article author"""
-        serializer.save(art_user_id=self.request.user)
+    @transaction.atomic
+    def create(self, request, *args, **kwargs):
+        """Create article with user association"""
+        try:
+            article_data = {
+                'title': request.data.get('title'),
+                'text': request.data.get('text'),
+                'user_id': request.user
+            }
+            
+            article = Article.objects.create(**article_data)
+            serializer = self.get_serializer(article)
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+            
+        except Exception as e:
+            return Response(
+                {'error': str(e)},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+    def destroy(self, request, *args, **kwargs):
+        """Delete an article"""
+        try:
+            article = self.get_object()
+            
+            # Check if user is admin or article author
+            if not request.user.is_admin() and article.user_id != request.user:
+                return Response(
+                    {"error": "You don't have permission to delete this article"},
+                    status=status.HTTP_403_FORBIDDEN
+                )
+            
+            article.delete()
+            return Response(
+                {"message": "Article deleted successfully"},
+                status=status.HTTP_204_NO_CONTENT
+            )
+            
+        except Exception as e:
+            return Response(
+                {'error': str(e)},
+                status=status.HTTP_400_BAD_REQUEST
+            )
 
 class ProjectViewSet(viewsets.ModelViewSet):
     """
