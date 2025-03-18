@@ -37,7 +37,7 @@ pip install -r requirements.txt
 
 ### 4. Create migration folder
 - Create directory django_rest/migrations
-- Create empty python file django_rest/migrations/__init__.py
+- Create empty python file django_rest/migrations/`__init__.py`
 
 ### 5. Install and Configure MariaDB
 
