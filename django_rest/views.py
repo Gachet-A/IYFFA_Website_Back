@@ -104,20 +104,23 @@ class UserViewSet(viewsets.ModelViewSet):
                         Cotisation.objects.filter(
                             user_id=user,
                             payment__status='succeeded'
-                        ).order_by('-id').first()
+                        ).order_by('-id').first(),
+                        context={'request': request}
                     ).data if Cotisation.objects.filter(user_id=user, payment__status='succeeded').exists() else None
                 }
             },
             'recent_activities': {
                 'articles': ArticleSerializer(
                     Article.objects.order_by('-creation_time')[:5],
-                    many=True
+                    many=True,
+                    context={'request': request}
                 ).data,
                 'events': EventSerializer(
                     Event.objects.filter(
                         start_datetime__gte=datetime.now()
                     ).order_by('start_datetime')[:5],
-                    many=True
+                    many=True,
+                    context={'request': request}
                 ).data
             }
         }
