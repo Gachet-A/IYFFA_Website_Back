@@ -42,6 +42,117 @@ class UserViewSet(viewsets.ModelViewSet):
             return [IsAuthenticated()]
         return [IsAuthenticated(), IsAdminUser()]
 
+    @transaction.atomic
+    def create(self, request, *args, **kwargs):
+        """Create a new user with proper validation"""
+        try:
+            # Vérifier si l'email existe déjà
+            email = request.data.get('email')
+            if email and User.objects.filter(email=email).exists():
+                return Response(
+                    {'error': 'Un utilisateur avec cet email existe déjà'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            # Forcer le username à être l'email
+            request.data['username'] = email
+
+            serializer = self.get_serializer(data=request.data)
+            if not serializer.is_valid():
+                return Response(
+                    {'error': serializer.errors},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            # Créer l'utilisateur
+            user = serializer.save()
+            
+            # Retourner la réponse sans le mot de passe
+            response_serializer = self.get_serializer(user)
+            return Response(
+                response_serializer.data,
+                status=status.HTTP_201_CREATED
+            )
+            
+        except Exception as e:
+            print(f"Error creating user: {str(e)}")  # Log l'erreur pour le débogage
+            return Response(
+                {'error': str(e)},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+    @transaction.atomic
+    def update(self, request, *args, **kwargs):
+        """Update user with proper validation"""
+        try:
+            instance = self.get_object()
+            partial = kwargs.pop('partial', False)
+            
+            # Vérifier si l'email est modifié et existe déjà
+            email = request.data.get('email')
+            if email and email != instance.email and User.objects.filter(email=email).exists():
+                return Response(
+                    {'error': 'Un utilisateur avec cet email existe déjà'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            # Si l'email est modifié, mettre à jour aussi le username
+            if email:
+                request.data['username'] = email
+            
+            serializer = self.get_serializer(
+                instance,
+                data=request.data,
+                partial=partial
+            )
+            if not serializer.is_valid():
+                return Response(
+                    {'error': serializer.errors},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            # Mettre à jour l'utilisateur
+            user = serializer.save()
+            
+            # Retourner la réponse
+            response_serializer = self.get_serializer(user)
+            return Response(
+                response_serializer.data,
+                status=status.HTTP_200_OK
+            )
+            
+        except Exception as e:
+            print(f"Error updating user: {str(e)}")  # Log l'erreur pour le débogage
+            return Response(
+                {'error': str(e)},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+    def destroy(self, request, *args, **kwargs):
+        """Delete user with proper validation"""
+        try:
+            instance = self.get_object()
+            
+            # Empêcher la suppression de son propre compte
+            if instance == request.user:
+                return Response(
+                    {'error': "Vous ne pouvez pas supprimer votre propre compte"},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            # Supprimer l'utilisateur
+            instance.delete()
+            return Response(
+                {"message": "Utilisateur supprimé avec succès"},
+                status=status.HTTP_204_NO_CONTENT
+            )
+            
+        except Exception as e:
+            return Response(
+                {'error': str(e)},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
     @action(detail=False, methods=['get'])
     def stats(self, request):
         """Get system-wide statistics for admin dashboard"""
