@@ -35,7 +35,7 @@ class UserSerializer(serializers.ModelSerializer):
             'last_name': {'required': True},
             'birthdate': {'required': True},
             'phone_number': {'required': True},
-            'user_type': {'required': True},
+            'user_type': {'required': False},  # On rend le champ optionnel
             'status': {'required': True},
             'cgu': {'required': True},
         }
@@ -45,12 +45,23 @@ class UserSerializer(serializers.ModelSerializer):
         # Pour la création d'utilisateur, le mot de passe est requis
         if not self.instance and 'password' not in data:
             raise serializers.ValidationError({"password": "Password is required for new users"})
+
+        # Validation du user_type
+        if 'user_type' in data:
+            # S'assurer que le type est valide
+            if data['user_type'] not in ['admin', 'user']:
+                raise serializers.ValidationError({"user_type": "Invalid user type"})
+
         return data
 
     def create(self, validated_data):
         """Handle user creation with password hashing"""
         # Utiliser l'email comme username
         validated_data['username'] = validated_data.get('email')
+        
+        # Par défaut, le type est 'user' si non spécifié
+        if 'user_type' not in validated_data:
+            validated_data['user_type'] = 'user'
         
         if 'password' in validated_data:
             validated_data['password'] = make_password(validated_data['password'])
@@ -67,6 +78,10 @@ class UserSerializer(serializers.ModelSerializer):
             validated_data['password'] = make_password(validated_data['password'])
         elif 'password' in validated_data:
             del validated_data['password']
+
+        # Conserver le type d'utilisateur actuel si non spécifié
+        if 'user_type' not in validated_data:
+            validated_data['user_type'] = instance.user_type
             
         return super().update(instance, validated_data)
 

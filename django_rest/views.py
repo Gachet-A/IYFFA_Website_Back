@@ -99,6 +99,20 @@ class UserViewSet(viewsets.ModelViewSet):
             # Si l'email est modifié, mettre à jour aussi le username
             if email:
                 request.data['username'] = email
+
+            # Vérifier si on essaie de changer le type d'utilisateur
+            new_user_type = request.data.get('user_type')
+            if new_user_type:
+                # Compter le nombre total d'administrateurs
+                admin_count = User.objects.filter(user_type='admin').count()
+                
+                # Si on essaie de rétrograder un admin en utilisateur
+                if instance.user_type == 'admin' and new_user_type == 'user':
+                    if admin_count <= 1:
+                        return Response(
+                            {'error': 'Impossible de changer le type. Il doit rester au moins un administrateur.'},
+                            status=status.HTTP_400_BAD_REQUEST
+                        )
             
             serializer = self.get_serializer(
                 instance,
