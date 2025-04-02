@@ -22,6 +22,8 @@ from .permissions import IsAdminUser
 from django.core.mail import send_mail
 import random
 from django.db import transaction
+from drf_yasg.utils import swagger_auto_schema
+from drf_yasg import openapi
 
 class UserViewSet(viewsets.ModelViewSet):
     """
@@ -42,6 +44,27 @@ class UserViewSet(viewsets.ModelViewSet):
             return [IsAuthenticated()]
         return [IsAuthenticated(), IsAdminUser()]
 
+    @swagger_auto_schema(
+        operation_description="Liste tous les utilisateurs",
+        responses={
+            200: UserSerializer(many=True),
+            401: "Non authentifié",
+            403: "Non autorisé"
+        }
+    )
+    def list(self, request, *args, **kwargs):
+        return super().list(request, *args, **kwargs)
+
+    @swagger_auto_schema(
+        operation_description="Crée un nouvel utilisateur",
+        request_body=UserSerializer,
+        responses={
+            201: UserSerializer,
+            400: "Données invalides",
+            401: "Non authentifié",
+            403: "Non autorisé"
+        }
+    )
     @transaction.atomic
     def create(self, request, *args, **kwargs):
         """Create a new user with proper validation"""
@@ -81,6 +104,17 @@ class UserViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
+    @swagger_auto_schema(
+        operation_description="Met à jour un utilisateur existant",
+        request_body=UserSerializer,
+        responses={
+            200: UserSerializer,
+            400: "Données invalides",
+            401: "Non authentifié",
+            403: "Non autorisé",
+            404: "Utilisateur non trouvé"
+        }
+    )
     @transaction.atomic
     def update(self, request, *args, **kwargs):
         """Update user with proper validation"""
@@ -142,6 +176,15 @@ class UserViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
+    @swagger_auto_schema(
+        operation_description="Supprime un utilisateur",
+        responses={
+            204: "Suppression réussie",
+            401: "Non authentifié",
+            403: "Non autorisé",
+            404: "Utilisateur non trouvé"
+        }
+    )
     def destroy(self, request, *args, **kwargs):
         """Delete user with proper validation"""
         try:
@@ -167,6 +210,25 @@ class UserViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
+    @swagger_auto_schema(
+        operation_description="Récupère les statistiques du système",
+        responses={
+            200: openapi.Response(
+                description="Statistiques du système",
+                schema=openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    properties={
+                        'total_users': openapi.Schema(type=openapi.TYPE_INTEGER),
+                        'total_regular_users': openapi.Schema(type=openapi.TYPE_INTEGER),
+                        'total_articles': openapi.Schema(type=openapi.TYPE_INTEGER),
+                        'total_events': openapi.Schema(type=openapi.TYPE_INTEGER),
+                        'total_projects': openapi.Schema(type=openapi.TYPE_INTEGER),
+                    }
+                )
+            ),
+            403: "Non autorisé"
+        }
+    )
     @action(detail=False, methods=['get'])
     def stats(self, request):
         """Get system-wide statistics for admin dashboard"""
@@ -196,6 +258,23 @@ class UserViewSet(viewsets.ModelViewSet):
         }
         return Response(stats)
 
+    @swagger_auto_schema(
+        operation_description="Récupère les statistiques du tableau de bord",
+        responses={
+            200: openapi.Response(
+                description="Statistiques du tableau de bord",
+                schema=openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    properties={
+                        'has_active_membership': openapi.Schema(type=openapi.TYPE_BOOLEAN),
+                        'error': openapi.Schema(type=openapi.TYPE_STRING),
+                        'message': openapi.Schema(type=openapi.TYPE_STRING),
+                    }
+                )
+            ),
+            403: "Non autorisé"
+        }
+    )
     @action(detail=False, methods=['get'])
     def dashboard_stats(self, request):
         """Get dashboard statistics for members"""
