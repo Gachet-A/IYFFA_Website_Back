@@ -22,6 +22,7 @@ from django.conf.urls.static import static
 urlpatterns = [
     path('admin/', admin.site.urls),
     path('', include('django_rest.urls')),  # Include app URLs without api prefix
+    path('api/', include('django_stripe_payments.urls')),  # Include payments URLs with api prefix
 ]
 
 # Serve media files in development
