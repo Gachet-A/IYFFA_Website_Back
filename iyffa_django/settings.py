@@ -40,9 +40,11 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     'rest_framework',
     'rest_framework_simplejwt',
+    'rest_framework_simplejwt.token_blacklist',
     'corsheaders',
+    'drf_yasg',  # Swagger
     'django_rest',
-    'django_stripe_payments',
+    'django_stripe_payments',  # Stripe payments app
 ]
 
 MIDDLEWARE = [

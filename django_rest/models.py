@@ -10,12 +10,18 @@ class CustomUserManager(UserManager):
         if not email:
             raise ValueError('The Email field must be set')
         
+        # Utiliser l'email comme username par défaut
+        email = self.normalize_email(email)
         extra_fields.setdefault('username', email)
+        
+        # Créer l'utilisateur
         user = self.model(
             email=email,
+            username=email,  # Forcer le username à être l'email
             **extra_fields
         )
-        user.set_password(password)
+        if password:
+            user.set_password(password)
         user.save(using=self._db)
         return user
 
@@ -47,6 +53,15 @@ class User(AbstractUser):
     otp_enabled = models.BooleanField(default=False)
     otp_secret = models.CharField(max_length=16, blank=True, null=True)  # For storing temporary OTP codes
     
+    # Rendre le username unique mais optionnel
+    username = models.CharField(
+        max_length=150,
+        unique=True,
+        blank=True,
+        null=True,
+        help_text='Username field, will be set to email by default.',
+    )
+    
     # Set custom manager
     objects = CustomUserManager()
     
@@ -57,6 +72,12 @@ class User(AbstractUser):
 
     class Meta:
         db_table = 'ifa_user'
+
+    def save(self, *args, **kwargs):
+        # S'assurer que le username est toujours égal à l'email
+        if not self.username:
+            self.username = self.email
+        super().save(*args, **kwargs)
 
     def __str__(self):
         return f"{self.first_name} {self.last_name}"
@@ -174,16 +195,18 @@ class Cotisation(models.Model):
     class Meta:
         db_table = 'ifa_cotisation' # Define table name
 
-# Payment table
-class Payment(models.Model):
-    id = models.AutoField(primary_key=True)  # Auto-incrementing PK
-    creation_time = models.DateTimeField(auto_now_add=True)  # Timestamp
-    amount = models.FloatField()
-    stripe_id = models.BigIntegerField()
-    status = models.CharField(max_length=45)
-    currency = models.CharField(max_length=45)
-    event_id = models.ForeignKey(Event, on_delete=models.CASCADE, db_column="event_id")
-    cot_id = models.ForeignKey(Cotisation, on_delete=models.CASCADE, db_column="cotisation_id")
-
-    class Meta:
-        db_table = 'ifa_payment'
+"""
+# Old Payment model - commented out as we're using django_stripe_payments.Payment instead
+# class Payment(models.Model):
+#     id = models.AutoField(primary_key=True)  # Auto-incrementing PK
+#     creation_time = models.DateTimeField(auto_now_add=True)  # Timestamp
+#     amount = models.FloatField()
+#     stripe_id = models.BigIntegerField()
+#     status = models.CharField(max_length=45)
+#     currency = models.CharField(max_length=45)
+#     event_id = models.ForeignKey(Event, on_delete=models.CASCADE, db_column="event_id")
+#     cot_id = models.ForeignKey(Cotisation, on_delete=models.CASCADE, db_column="cotisation_id")
+#
+#     class Meta:
+#         db_table = 'ifa_payment'
+"""
