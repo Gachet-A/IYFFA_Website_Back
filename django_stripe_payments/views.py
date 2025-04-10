@@ -32,25 +32,27 @@ def send_payment_confirmation_email(payment_data):
     Handles different email templates based on payment type.
     """
     try:
-        subject = f"Thank you for your {payment_data['payment_type']}!"
+        subject = f"Thank you for your Gift!"
         message = f"""
         Dear {payment_data['name']},
 
-        Thank you for your {payment_data['payment_type']} of {payment_data['amount']} {payment_data['currency']}.
+        Thank you for your gift of {payment_data['amount']} {payment_data['currency']} through {payment_data['payment_method']}
 
-        Transaction ID: {payment_data['stripe_id']}
-
-        If you have any questions, please contact us at {settings.DEFAULT_FROM_EMAIL}
-
-        Best regards,
-        IYFFA Team
         """
 
         if payment_data['payment_type'] == 'monthly_donation':
             message += f"""
             Your monthly donation of {payment_data['amount']} {payment_data['currency']} will be automatically processed each month.
-            To manage or cancel your subscription, please contact us with your subscription ID: {payment_data['subscription_id']}
+            
+            To manage your subscription (including cancellation), click here: {payment_data['cancel_url']}
             """
+
+        message += f"""
+        If you have any questions, please contact us at {settings.DEFAULT_FROM_EMAIL}
+
+        Best regards,
+        IYFFA Team
+        """
 
         send_mail(
             subject,
@@ -67,7 +69,7 @@ def send_payment_confirmation_email(payment_data):
 @permission_classes([AllowAny])
 def create_payment_intent(request):
     """
-    Creates a payment intent for one-time donations or a subscription for monthly donations.
+    Creates a payment intent for one-time donations or a setup intent for monthly donations.
     Handles both authenticated and anonymous payments.
     """
     try:
@@ -76,6 +78,7 @@ def create_payment_intent(request):
         email = data.get('email')
         name = data.get('name')
         payment_type = data.get('payment_type')
+        payment_method_types = data.get('payment_method_types', ['card'])  # Get payment methods or default to card
 
         if not all([amount, email, payment_type]):
             return Response({'error': 'Missing required fields'}, status=status.HTTP_400_BAD_REQUEST)
@@ -108,10 +111,30 @@ def create_payment_intent(request):
                 }
             )
 
-            # Create subscription
-            subscription = stripe.Subscription.create(
+            # Create setup intent for collecting payment method
+            setup_intent = stripe.SetupIntent.create(
                 customer=customer.id,
-                items=[{'price': price.id}],
+                payment_method_types=payment_method_types,  # Use the provided payment methods
+                metadata={
+                    'payment_type': payment_type,
+                    'name': name,
+                    'email': email,
+                    'price_id': price.id,
+                    'amount': amount
+                }
+            )
+
+            return Response({
+                'clientSecret': setup_intent.client_secret,
+                'setup_intent_id': setup_intent.id
+            })
+
+        else:
+            # Create payment intent for one-time payment
+            payment_intent = stripe.PaymentIntent.create(
+                amount=amount * 100,  # amount in cents
+                currency='chf',
+                payment_method_types=payment_method_types,  # Use the provided payment methods
                 metadata={
                     'payment_type': payment_type,
                     'name': name,
@@ -120,37 +143,86 @@ def create_payment_intent(request):
             )
 
             return Response({
-                'subscriptionId': subscription.id,
-                'clientSecret': subscription.latest_invoice.payment_intent.client_secret
-            })
-
-        else:
-            # Create payment intent for one-time payment
-            payment_intent = stripe.PaymentIntent.create(
-                amount=amount * 100,  # amount in cents
-                currency='chf',
-                automatic_payment_methods={
-                    'enabled': True,
-                },
-                metadata={
-                    'payment_type': payment_type,
-                    'name': name,
-                    'email': email,
-                    'user_id': str(request.user.id) if request.user.is_authenticated else 'anonymous'
-                }
-            )
-
-            return Response({
-                'clientSecret': payment_intent.client_secret
+                'clientSecret': payment_intent.client_secret,
+                'payment_intent_id': payment_intent.id
             })
 
     except Exception as e:
         logger.error(f"Error creating payment intent: {str(e)}")
         return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def create_monthly_subscription(request):
+    """
+    Creates a monthly subscription for recurring donations.
+    Only supports card payments for subscriptions.
+    """
+    try:
+        data = request.data
+        amount = data.get('amount')
+        email = data.get('email')
+        name = data.get('name')
+        address = data.get('address')
+        payment_type = 'monthly_donation'  # Fixed for this endpoint
+
+        if not all([amount, email, name, address]):
+            return Response({'error': 'Missing required fields'}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Create or retrieve customer
+        customer = stripe.Customer.create(
+            email=email,
+            name=name,
+            metadata={
+                'payment_type': payment_type,
+                'name': name,
+                'address': address
+            }
+        )
+
+        # Create price for subscription
+        price = stripe.Price.create(
+            unit_amount=amount * 100,  # amount in cents
+            currency='chf',
+            recurring={'interval': 'month'},
+            product_data={
+                'name': 'Monthly Donation',
+                'metadata': {
+                    'payment_type': payment_type
+                }
+            }
+        )
+
+        # Create setup intent for collecting payment method
+        # Only support card payments for subscriptions
+        setup_intent = stripe.SetupIntent.create(
+            customer=customer.id,
+            payment_method_types=['card'],  # Only card for subscriptions
+            metadata={
+                'payment_type': payment_type,
+                'name': name,
+                'email': email,
+                'price_id': price.id,
+                'amount': amount,
+                'address': address
+            }
+        )
+
+        return Response({
+            'clientSecret': setup_intent.client_secret,
+            'setup_intent_id': setup_intent.id,
+            'customer_id': customer.id,
+            'price_id': price.id
+        })
+
+    except Exception as e:
+        logger.error(f"Error creating monthly subscription: {str(e)}")
+        return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
 @csrf_exempt
 @require_POST
 @permission_classes([AllowAny])
+@authentication_classes([])  # Explicitly disable authentication
 def webhook_handler(request):
     """
     Handles Stripe webhook events for payment processing.
@@ -172,7 +244,108 @@ def webhook_handler(request):
         return HttpResponse(status=400)
 
     try:
-        if event.type == 'payment_intent.succeeded':
+        if event.type == 'setup_intent.succeeded':
+            setup_intent = event.data.object
+            customer_id = setup_intent.customer
+            payment_method_id = setup_intent.payment_method
+            
+            # Attach payment method to customer
+            stripe.PaymentMethod.attach(
+                payment_method_id,
+                customer=customer_id
+            )
+            
+            # Set as default payment method
+            stripe.Customer.modify(
+                customer_id,
+                invoice_settings={
+                    'default_payment_method': payment_method_id
+                }
+            )
+            
+            # Get price_id from metadata
+            price_id = setup_intent.metadata.get('price_id')
+            if not price_id:
+                logger.error("No price_id found in setup intent metadata")
+                return HttpResponse(status=200)
+            
+            # Create subscription
+            subscription = stripe.Subscription.create(
+                customer=customer_id,
+                items=[{'price': price_id}],
+                payment_behavior='default_incomplete',
+                expand=['latest_invoice.payment_intent']
+            )
+            
+            # Create payment record with valid fields
+            Payment.objects.create(
+                stripe_payment_id=setup_intent.id,
+                amount=int(float(setup_intent.metadata.get('amount', 0)) * 100),  # Convert to cents
+                currency='chf',
+                status='succeeded',
+                payment_type='monthly_donation',
+                email=setup_intent.metadata.get('email'),
+                payment_method='card',  # Since we only allow card for subscriptions
+                subscription_id=subscription.id  # Store the subscription ID
+            )
+            
+            # Get the direct cancellation URL (frontend route)
+            cancel_url = f"http://localhost:8080/cancel-subscription/{subscription.id}"
+            
+            # Send confirmation email with cancel_url
+            send_payment_confirmation_email({
+                'email': setup_intent.metadata.get('email'),
+                'name': setup_intent.metadata.get('name'),
+                'amount': setup_intent.metadata.get('amount'),
+                'payment_type': 'monthly_donation',
+                'cancel_url': cancel_url,
+                'currency': 'chf',  # Add currency
+                'payment_method': 'card'  # Add payment method
+            })
+            
+            return HttpResponse(status=200)
+
+        elif event.type == 'invoice.payment_succeeded':
+            invoice = event.data.object
+            subscription = invoice.subscription
+            
+            # Update payment status if it exists
+            payment = Payment.objects.filter(subscription_id=subscription).first()
+            if payment:
+                payment.status = 'active'
+                payment.save()
+                
+                # Send confirmation email for successful payment
+                send_payment_confirmation_email({
+                    'email': payment.email,
+                    'amount': payment.amount / 100,  # Convert back to CHF
+                    'payment_type': payment.payment_type,
+                    'currency': payment.currency,
+                    'payment_method': payment.payment_method,
+                    'name': setup_intent.metadata.get('name', 'Donor')  # Get name from setup intent metadata
+                })
+            
+            return HttpResponse(status=200)
+
+        elif event.type == 'customer.subscription.updated':
+            subscription = event.data.object
+            payment = Payment.objects.filter(subscription_id=subscription.id).first()
+            if payment:
+                payment.status = subscription.status
+                payment.save()
+            
+            return HttpResponse(status=200)
+
+        elif event.type == 'customer.subscription.deleted':
+            subscription = event.data.object
+            payment = Payment.objects.filter(subscription_id=subscription.id).first()
+            if payment:
+                payment.status = 'canceled'
+                payment.save()
+            
+            return HttpResponse(status=200)
+
+        elif event.type == 'payment_intent.succeeded':
             payment_intent = event.data.object
             email = payment_intent.receipt_email or payment_intent.metadata.get('email')
             
@@ -180,49 +353,64 @@ def webhook_handler(request):
                 logger.warning("No email found in payment intent, skipping payment record creation")
                 return HttpResponse(status=200)
 
+            # Get the payment method used
+            payment_method = stripe.PaymentMethod.retrieve(payment_intent.payment_method)
+            payment_method_type = payment_method.type
+
             payment_data = {
+                'stripe_payment_id': payment_intent.id,
                 'amount': payment_intent.amount / 100,
                 'currency': payment_intent.currency,
-                'stripe_id': payment_intent.id,
                 'status': 'succeeded',
+                'email': email,
+                'payment_type': payment_intent.metadata.get('payment_type', 'one_time_donation'),
+                'payment_method': payment_method_type
+            }
+
+            payment = Payment.objects.create(**payment_data)
+            send_payment_confirmation_email({
+                'stripe_id': payment_intent.id,
+                'amount': payment_intent.amount / 100,
+                'currency': payment_intent.currency,
                 'email': email,
                 'name': payment_intent.metadata.get('name', 'Anonymous'),
                 'payment_type': payment_intent.metadata.get('payment_type', 'one_time_donation'),
-                'user_id': payment_intent.metadata.get('user_id')
-            }
-
-            payment = Payment.objects.create(**payment_data)
-            send_payment_confirmation_email(payment_data)
-
-        elif event.type == 'invoice.payment_succeeded':
-            invoice = event.data.object
-            customer = stripe.Customer.retrieve(invoice.customer)
-            email = customer.email or invoice.metadata.get('email')
-            
-            if not email:
-                logger.warning("No email found in invoice, skipping payment record creation")
-                return HttpResponse(status=200)
-
-            payment_data = {
-                'amount': invoice.amount_paid / 100,
-                'currency': invoice.currency,
-                'stripe_id': invoice.payment_intent,
-                'status': 'succeeded',
-                'email': email,
-                'name': customer.name or invoice.metadata.get('name', 'Anonymous'),
-                'payment_type': 'monthly_donation',
-                'subscription_id': invoice.subscription,
-                'user_id': invoice.metadata.get('user_id')
-            }
-
-            payment = Payment.objects.create(**payment_data)
-            send_payment_confirmation_email(payment_data)
+                'payment_method': payment_method_type
+            })
 
     except Exception as e:
         logger.error(f"Error processing webhook: {str(e)}")
         return HttpResponse(status=500)
 
     return HttpResponse(status=200)
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def cancel_subscription(request, subscription_id):
+    """
+    Cancels a subscription and updates the payment record.
+    """
+    try:
+        # Cancel the subscription in Stripe
+        subscription = stripe.Subscription.modify(
+            subscription_id,
+            cancel_at_period_end=True
+        )
+        
+        # Update the payment record
+        payment = Payment.objects.filter(subscription_id=subscription_id).first()
+        if payment:
+            payment.status = 'canceled'
+            payment.save()
+        
+        return Response({
+            'status': 'success',
+            'message': 'Subscription will be canceled at the end of the current period'
+        })
+        
+    except Exception as e:
+        logger.error(f"Error canceling subscription: {str(e)}")
+        return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
 class PaymentViewSet(viewsets.ModelViewSet):
     """

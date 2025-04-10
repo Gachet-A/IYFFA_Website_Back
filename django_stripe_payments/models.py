@@ -7,6 +7,12 @@ class Payment(models.Model):
         ('membership_renewal', 'Membership Renewal'),
     )
 
+    PAYMENT_METHOD_CHOICES = (
+        ('card', 'Credit Card'),
+        ('twint', 'TWINT'),
+        ('paypal', 'PayPal'),
+    )
+
     stripe_payment_id = models.CharField(max_length=100, unique=True)
     amount = models.IntegerField()
     currency = models.CharField(max_length=3, default='chf')
@@ -16,6 +22,12 @@ class Payment(models.Model):
         max_length=20, 
         choices=PAYMENT_TYPE_CHOICES, 
         default='one_time_donation'
+    )
+    payment_method = models.CharField(
+        max_length=20,
+        choices=PAYMENT_METHOD_CHOICES,
+        null=True,
+        blank=True
     )
     cotisation = models.ForeignKey(
         'django_rest.Cotisation', 
