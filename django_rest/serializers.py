@@ -4,7 +4,7 @@ Handles data validation and format conversion for API endpoints.
 """
 
 from rest_framework import serializers
-from .models import User, Article, Project, Document, Event, Image, Cotisation
+from .models import User, Article, Project, Document, Event, Image, Cotisation, Payment
 from django.contrib.auth.hashers import make_password
 
 # This file converts Django model instances into JSON format to be used in the views
@@ -220,3 +220,14 @@ class CotisationSerializer(serializers.ModelSerializer):
     class Meta:
         model = Cotisation
         fields = '__all__'
+
+class PaymentSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Payment
+        fields = [
+            'id', 'user', 'cotisation', 'stripe_payment_id', 'amount', 
+            'currency', 'status', 'payment_type', 'payment_method', 
+            'transaction_id', 'description', 'subscription_id', 
+            'creation_time', 'update_time'
+        ]
+        read_only_fields = ['id', 'creation_time', 'update_time']

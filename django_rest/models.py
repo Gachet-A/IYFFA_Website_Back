@@ -1,6 +1,11 @@
 from django.db import models
 from django.contrib.auth.models import AbstractUser, UserManager
 from django.conf import settings
+from django.utils.translation import gettext_lazy as _
+from django.utils import timezone
+import uuid
+import os
+from datetime import datetime, timedelta
 
 # File that defines the database classes
 
@@ -51,7 +56,10 @@ class User(AbstractUser):
     cgu = models.BooleanField(default=False)    # Terms of service acceptance
     stripe_id = models.CharField(max_length=100, blank=True, null=True)
     otp_enabled = models.BooleanField(default=False)
-    otp_secret = models.CharField(max_length=16, blank=True, null=True)  # For storing temporary OTP codes
+    otp_secret = models.CharField(max_length=32, null=True, blank=True)
+    stripe_customer_id = models.CharField(max_length=100, null=True, blank=True)
+    subscription_status = models.CharField(max_length=20, null=True, blank=True)
+    subscription_id = models.CharField(max_length=100, null=True, blank=True)
     
     # Rendre le username unique mais optionnel
     username = models.CharField(
@@ -195,18 +203,54 @@ class Cotisation(models.Model):
     class Meta:
         db_table = 'ifa_cotisation' # Define table name
 
-"""
-# Old Payment model - commented out as we're using django_stripe_payments.Payment instead
-# class Payment(models.Model):
-#     id = models.AutoField(primary_key=True)  # Auto-incrementing PK
-#     creation_time = models.DateTimeField(auto_now_add=True)  # Timestamp
-#     amount = models.FloatField()
-#     stripe_id = models.BigIntegerField()
-#     status = models.CharField(max_length=45)
-#     currency = models.CharField(max_length=45)
-#     event_id = models.ForeignKey(Event, on_delete=models.CASCADE, db_column="event_id")
-#     cot_id = models.ForeignKey(Cotisation, on_delete=models.CASCADE, db_column="cotisation_id")
-#
-#     class Meta:
-#         db_table = 'ifa_payment'
-"""
+# Payment model
+class Payment(models.Model):
+    """
+    Model for tracking payments made by users
+    """
+    PAYMENT_TYPE_CHOICES = (
+        ('one_time_donation', 'One Time Donation'),
+        ('monthly_donation', 'Monthly Donation'),
+        ('membership_renewal', 'Membership Renewal'),
+    )
+    
+    PAYMENT_METHOD_CHOICES = (
+        ('card', 'Credit Card'),
+        ('twint', 'TWINT'),
+        ('paypal', 'PayPal'),
+    )
+    
+    PAYMENT_STATUS_CHOICES = (
+        ('pending', 'Pending'),
+        ('succeeded', 'Succeeded'),
+        ('failed', 'Failed'),
+        ('refunded', 'Refunded'),
+    )
+    
+    CURRENCY_CHOICES = (
+        ('USD', 'US Dollar'),
+        ('EUR', 'Euro'),
+        ('CHF', 'Swiss Franc'),
+    )
+    
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='payments', null=True, blank=True)
+    cotisation = models.ForeignKey(Cotisation, on_delete=models.CASCADE, related_name='payments', null=True, blank=True)
+    stripe_payment_id = models.CharField(max_length=100, unique=True, null=True, blank=True)
+    amount = models.DecimalField(max_digits=10, decimal_places=2)
+    currency = models.CharField(max_length=3, choices=CURRENCY_CHOICES, default='XOF')
+    status = models.CharField(max_length=20, choices=PAYMENT_STATUS_CHOICES, default='pending')
+    payment_type = models.CharField(max_length=20, choices=PAYMENT_TYPE_CHOICES, default='one_time_donation')
+    payment_method = models.CharField(max_length=50, choices=PAYMENT_METHOD_CHOICES, null=True, blank=True)
+    transaction_id = models.CharField(max_length=100, null=True, blank=True)
+    description = models.TextField(null=True, blank=True)
+    subscription_id = models.CharField(max_length=100, null=True, blank=True)  # For monthly donations
+    creation_time = models.DateTimeField(auto_now_add=True)
+    update_time = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        db_table = 'ifa_payment'
+        ordering = ['-creation_time']
+        
+    def __str__(self):
+        return f"{self.user.email if self.user else 'Anonymous'} - {self.amount} {self.currency} - {self.status}"

@@ -4,7 +4,8 @@ from rest_framework_simplejwt.views import TokenRefreshView
 from .views import (
     UserViewSet, ArticleViewSet, ProjectViewSet, DocumentViewSet, 
     EventViewSet, ImageViewSet, CotisationViewSet, LoginView, LogoutView,
-    RefreshTokenView, UserStatsView, VerifyOTPView, Enable2FAView, Disable2FAView, Verify2FASetupView
+    RefreshTokenView, UserStatsView, VerifyOTPView, Enable2FAView, Disable2FAView, Verify2FASetupView,
+    PaymentViewSet
 )
 from drf_yasg.views import get_schema_view
 from drf_yasg import openapi
@@ -34,6 +35,7 @@ router.register(r'documents', DocumentViewSet, basename='document')
 router.register(r'events', EventViewSet, basename='event')
 router.register(r'images', ImageViewSet, basename='image')
 router.register(r'cotisations', CotisationViewSet, basename='cotisation')
+router.register(r'payments', PaymentViewSet, basename='payment')
 
 urlpatterns = [
     path('api/', include(router.urls)),  # Include all registered API endpoints
