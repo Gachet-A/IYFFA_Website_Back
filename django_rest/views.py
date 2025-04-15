@@ -985,19 +985,22 @@ def send_payment_confirmation_email(payment_data):
     Handles different email templates based on payment type.
     """
     try:
+        logger.info(f"Attempting to send payment confirmation email to {payment_data.get('email')}")
+        logger.info(f"Payment data: {payment_data}")
+
         subject = f"Thank you for your Gift!"
         message = f"""
-        Dear {payment_data['name']},
+        Dear {payment_data.get('name', 'Valued Donor')},
 
-        Thank you for your gift of {payment_data['amount']} {payment_data['currency']} through {payment_data['payment_method']}
+        Thank you for your gift of {payment_data.get('amount')} {payment_data.get('currency')} through {payment_data.get('payment_method')}
 
         """
 
-        if payment_data['payment_type'] == 'monthly_donation':
+        if payment_data.get('payment_type') == 'monthly_donation':
             message += f"""
-            Your monthly donation of {payment_data['amount']} {payment_data['currency']} will be automatically processed each month.
+            Your monthly donation of {payment_data.get('amount')} {payment_data.get('currency')} will be automatically processed each month.
             
-            To manage your subscription (including cancellation), click here: {payment_data['cancel_url']}
+            To manage your subscription (including cancellation), click here: {payment_data.get('cancel_url')}
             """
 
         message += f"""
@@ -1007,16 +1010,31 @@ def send_payment_confirmation_email(payment_data):
         IYFFA Team
         """
 
-        send_mail(
+        logger.info(f"Sending email with subject: {subject}")
+        logger.info(f"Email content: {message}")
+        logger.info(f"From email: {settings.DEFAULT_FROM_EMAIL}")
+        logger.info(f"To email: {payment_data.get('email')}")
+
+        result = send_mail(
             subject,
             message,
             settings.DEFAULT_FROM_EMAIL,
-            [payment_data['email']],
+            [payment_data.get('email')],
             fail_silently=False,
         )
-        logger.info(f"Confirmation email sent successfully to {payment_data['email']}")
+
+        if result:
+            logger.info(f"Confirmation email sent successfully to {payment_data.get('email')}")
+            return True
+        else:
+            logger.error(f"Failed to send confirmation email to {payment_data.get('email')} - send_mail returned False")
+            return False
+
     except Exception as e:
         logger.error(f"Failed to send confirmation email: {str(e)}")
+        logger.error(f"Payment data that caused the error: {payment_data}")
+        logger.exception("Full traceback:")
+        return False
 
 class PaymentViewSet(viewsets.ModelViewSet):
     """
@@ -1027,9 +1045,24 @@ class PaymentViewSet(viewsets.ModelViewSet):
     serializer_class = PaymentSerializer
     permission_classes = [IsAuthenticated]
 
+    def get_permissions(self):
+        if self.action in ['create_intent', 'create_subscription', 'webhook']:
+            return [AllowAny()]
+        return super().get_permissions()
+
     def get_queryset(self):
         """Filter payments to show only those belonging to the current user"""
-        return Payment.objects.filter(user=self.request.user)
+        queryset = Payment.objects.all()
+        
+        # Always filter by the current user
+        queryset = queryset.filter(user=self.request.user)
+        
+        # If filtering by subscription_id, add that filter
+        subscription_id = self.request.query_params.get('subscription_id', None)
+        if subscription_id:
+            queryset = queryset.filter(subscription_id=subscription_id)
+            
+        return queryset
 
     @action(detail=False, methods=['post'])
     def create_intent(self, request):
@@ -1211,8 +1244,7 @@ class PaymentViewSet(viewsets.ModelViewSet):
                 subscription = stripe.Subscription.create(
                     customer=customer_id,
                     items=[{'price': price_id}],
-                    payment_behavior='default_incomplete',
-                    expand=['latest_invoice.payment_intent']
+                    payment_behavior='default_incomplete'
                 )
                 
                 # Create payment record
@@ -1222,9 +1254,9 @@ class PaymentViewSet(viewsets.ModelViewSet):
                     currency='chf',
                     status='succeeded',
                     payment_type='monthly_donation',
-                    email=setup_intent.metadata.get('email'),
                     payment_method='card',
-                    subscription_id=subscription.id
+                    subscription_id=subscription.id,
+                    user=request.user if request.user.is_authenticated else None
                 )
                 
                 # Send confirmation email
@@ -1233,7 +1265,7 @@ class PaymentViewSet(viewsets.ModelViewSet):
                     'name': setup_intent.metadata.get('name'),
                     'amount': setup_intent.metadata.get('amount'),
                     'payment_type': 'monthly_donation',
-                    'cancel_url': f"http://localhost:8080/cancel-subscription/{subscription.id}",
+                    'cancel_url': f"http://localhost:8080/cancel_subscription/{subscription.id}",
                     'currency': 'chf',
                     'payment_method': 'card'
                 })
@@ -1252,18 +1284,19 @@ class PaymentViewSet(viewsets.ModelViewSet):
                 payment_method = stripe.PaymentMethod.retrieve(payment_intent.payment_method)
                 payment_method_type = payment_method.type
 
+                # Create payment record
                 payment_data = {
                     'stripe_payment_id': payment_intent.id,
                     'amount': payment_intent.amount / 100,
                     'currency': payment_intent.currency,
                     'status': 'succeeded',
-                    'email': email,
                     'payment_type': payment_intent.metadata.get('payment_type', 'one_time_donation'),
                     'payment_method': payment_method_type
                 }
-
                 Payment.objects.create(**payment_data)
-                send_payment_confirmation_email({
+
+                # Send confirmation email
+                email_data = {
                     'stripe_id': payment_intent.id,
                     'amount': payment_intent.amount / 100,
                     'currency': payment_intent.currency,
@@ -1271,12 +1304,13 @@ class PaymentViewSet(viewsets.ModelViewSet):
                     'name': payment_intent.metadata.get('name', 'Anonymous'),
                     'payment_type': payment_intent.metadata.get('payment_type', 'one_time_donation'),
                     'payment_method': payment_method_type
-                })
+                }
+                send_payment_confirmation_email(email_data)
 
             elif event.type == 'customer.subscription.deleted':
                 subscription = event.data.object
                 payment = Payment.objects.filter(subscription_id=subscription.id).first()
-                if payment:
+            if payment:
                     payment.status = 'canceled'
                     payment.save()
 

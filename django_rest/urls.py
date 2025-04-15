@@ -56,6 +56,12 @@ urlpatterns = [
     # User related URLs
     path('user/stats/', UserStatsView.as_view(), name='user-stats'),
 
+    # Payment related URLs
+    path('create_payment_intent/', PaymentViewSet.as_view({'post': 'create_intent'}), name='create-payment-intent'),
+    path('create_monthly_subscription/', PaymentViewSet.as_view({'post': 'create_subscription'}), name='create-monthly-subscription'),
+    path('webhook/', PaymentViewSet.as_view({'post': 'webhook'}), name='stripe-webhook'),
+    path('cancel_subscription/<str:pk>/', PaymentViewSet.as_view({'post': 'cancel_subscription'}), name='cancel-subscription'),
+
     # Documentation URLs
     path('docs/swagger<format>/', schema_view.without_ui(cache_timeout=0), name='schema-json'),
     path('docs/swagger/', schema_view.with_ui('swagger', cache_timeout=0), name='schema-swagger-ui'),
