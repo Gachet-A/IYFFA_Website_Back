@@ -44,7 +44,6 @@ INSTALLED_APPS = [
     'corsheaders',
     'drf_yasg',  # Swagger
     'django_rest',
-    'django_stripe_payments',  # Stripe payments app
 ]
 
 MIDDLEWARE = [

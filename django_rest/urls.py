@@ -38,24 +38,26 @@ router.register(r'cotisations', CotisationViewSet, basename='cotisation')
 router.register(r'payments', PaymentViewSet, basename='payment')
 
 urlpatterns = [
-    path('api/', include(router.urls)),  # Include all registered API endpoints
+    # API endpoints from router
+    path('', include(router.urls)),  # Include all registered API endpoints
 
     # Auth related URLs
-    path('api/auth/login/', LoginView.as_view(), name='login'),
-    path('api/auth/verify-otp/', VerifyOTPView.as_view(), name='verify-otp'),
-    path('api/auth/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
+    path('auth/login/', LoginView.as_view(), name='login'),
+    path('auth/logout/', LogoutView.as_view(), name='logout'),
+    path('auth/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
+    path('auth/refresh-token/', RefreshTokenView.as_view(), name='refresh-token'),
+    path('auth/verify-otp/', VerifyOTPView.as_view(), name='verify-otp'),
     
     # 2FA management URLs
-    path('api/auth/2fa/enable/', Enable2FAView.as_view(), name='enable-2fa'),
-    path('api/auth/2fa/verify/', Verify2FASetupView.as_view(), name='verify-2fa-setup'),
-    path('api/auth/2fa/disable/', Disable2FAView.as_view(), name='disable-2fa'),
+    path('auth/2fa/enable/', Enable2FAView.as_view(), name='enable-2fa'),
+    path('auth/2fa/verify/', Verify2FASetupView.as_view(), name='verify-2fa-setup'),
+    path('auth/2fa/disable/', Disable2FAView.as_view(), name='disable-2fa'),
 
-    # Swagger URLs
-    path('swagger<format>/', schema_view.without_ui(cache_timeout=0), name='schema-json'),
-    path('swagger/', schema_view.with_ui('swagger', cache_timeout=0), name='schema-swagger-ui'),
-    path('redoc/', schema_view.with_ui('redoc', cache_timeout=0), name='schema-redoc'),
+    # User related URLs
+    path('user/stats/', UserStatsView.as_view(), name='user-stats'),
 
-    path('logout/', LogoutView.as_view(), name='logout'),
-    path('refresh-token/', RefreshTokenView.as_view(), name='refresh-token'),
-    path('user-stats/', UserStatsView.as_view(), name='user-stats'),
+    # Documentation URLs
+    path('docs/swagger<format>/', schema_view.without_ui(cache_timeout=0), name='schema-json'),
+    path('docs/swagger/', schema_view.with_ui('swagger', cache_timeout=0), name='schema-swagger-ui'),
+    path('docs/redoc/', schema_view.with_ui('redoc', cache_timeout=0), name='schema-redoc'),
 ]

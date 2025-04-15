@@ -690,48 +690,45 @@ class LoginView(APIView):
     """Handle user login with optional 2FA"""
     permission_classes = [AllowAny]
     
-    @transaction.atomic
     def post(self, request):
         """Authenticate user and handle 2FA"""
         email = request.data.get("email")
         password = request.data.get("password")
         
+        if not email or not password:
+            return Response(
+                {"error": "Email and password are required"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
         try:
             user = User.objects.get(email=email)
+            if not user.check_password(password):
+                return Response(
+                    {"error": "Invalid credentials"},
+                    status=status.HTTP_401_UNAUTHORIZED
+                )
             
-            if user.check_password(password):
-                if user.otp_enabled:
-                    # Generate new OTP
-                    otp = ''.join([str(random.randint(0, 9)) for _ in range(6)])
-                    
-                    # Update user's OTP
-                    User.objects.filter(id=user.id).update(otp_secret=otp)
-                    
-                    # Send OTP via email
-                    send_mail(
-                        'Your Login Verification Code',
-                        f'Your verification code is: {otp}\nEnter this code to complete your login.',
-                        'noreply@iyffa.com',
-                        [user.email],
-                        fail_silently=False,
-                    )
-                    
-                    return Response({
-                        "otp_required": True,
-                        "message": "Check your email for the verification code",
-                        "user": {
-                            "id": user.id,
-                            "email": user.email,
-                            "name": user.first_name,
-                            "surname": user.last_name,
-                            "user_type": user.user_type
-                        }
-                    })
+            if user.otp_enabled:
+                # Generate new OTP
+                otp = ''.join([str(random.randint(0, 9)) for _ in range(6)])
                 
-                refresh = RefreshToken.for_user(user)
+                # Update user's OTP
+                user.otp_secret = otp
+                user.save()
+                
+                # Send OTP via email
+                send_mail(
+                    'Your Login Verification Code',
+                    f'Your verification code is: {otp}\nEnter this code to complete your login.',
+                    settings.DEFAULT_FROM_EMAIL,
+                    [user.email],
+                    fail_silently=False,
+                )
+                
                 return Response({
-                    "access": str(refresh.access_token),
-                    "refresh": str(refresh),
+                    "otp_required": True,
+                    "message": "Check your email for the verification code",
                     "user": {
                         "id": user.id,
                         "email": user.email,
@@ -741,10 +738,24 @@ class LoginView(APIView):
                     }
                 })
             
-            return Response({"error": "Invalid credentials"}, status=401)
+            refresh = RefreshToken.for_user(user)
+            return Response({
+                "access": str(refresh.access_token),
+                "refresh": str(refresh),
+                "user": {
+                    "id": user.id,
+                    "email": user.email,
+                    "name": user.first_name,
+                    "surname": user.last_name,
+                    "user_type": user.user_type
+                }
+            })
             
         except User.DoesNotExist:
-            return Response({"error": "Invalid credentials"}, status=401)
+            return Response(
+                {"error": "Invalid credentials"},
+                status=status.HTTP_401_UNAUTHORIZED
+            )
 
 class VerifyOTPView(APIView):
     """Handle 2FA OTP verification at every login"""
