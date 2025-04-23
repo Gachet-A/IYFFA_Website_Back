@@ -98,6 +98,7 @@ DB_PORT=3306
 
 ### 8. Apply Migrations
 ```sh
+python manage.py makemigrations
 python manage.py migrate
 ```
 
