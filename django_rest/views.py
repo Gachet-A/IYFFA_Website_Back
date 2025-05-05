@@ -290,41 +290,21 @@ class UserViewSet(viewsets.ModelViewSet):
     )
     @action(detail=False, methods=['get'])
     def dashboard_stats(self, request):
-        """Get dashboard statistics for members"""
         user = request.user
-        
-        # Vérifier si l'utilisateur a un paiement de cotisation valide
-        has_active_membership = Payment.objects.filter(
-            user_id=user,
-            status='succeeded'
-        ).exists()
-        
-        if not has_active_membership and not user.is_admin():
+
+        # Vérifier que l'utilisateur est membre ou admin
+        if not (user.user_type == 'user' or user.user_type == 'admin'):
             return Response({
-                "error": "Unauthorized. Active membership required.",
-                "message": "Please subscribe to access the dashboard."
+                "error": "Unauthorized. Membership required.",
+                "message": "Please contact an admin to become a member."
             }, status=status.HTTP_403_FORBIDDEN)
-        
+
         # Stats pour les membres
         base_stats = {
             'personal_stats': {
                 'my_articles': Article.objects.filter(user_id=user).count(),
                 'my_events': Event.objects.filter(user_id=user).count(),
-                'my_payments': list(Payment.objects.filter(
-                    user_id=user
-                ).order_by('-creation_time')[:5].values(
-                    'amount', 'creation_time', 'status', 'currency'
-                )),
-                'membership_status': {
-                    'is_active': has_active_membership,
-                    'current_cotisation': CotisationSerializer(
-                        Cotisation.objects.filter(
-                            user_id=user,
-                            payments__status='succeeded'
-                        ).order_by('-id').first(),
-                        context={'request': request}
-                    ).data if Cotisation.objects.filter(user_id=user, payments__status='succeeded').exists() else None
-                }
+                # Ajoute ici d'autres stats personnelles si besoin
             },
             'recent_activities': {
                 'articles': ArticleSerializer(
@@ -338,52 +318,24 @@ class UserViewSet(viewsets.ModelViewSet):
                     ).order_by('start_datetime')[:5],
                     many=True,
                     context={'request': request}
+                ).data,
+                'projects': ProjectSerializer(
+                    Project.objects.order_by('-id')[:5],
+                    many=True,
+                    context={'request': request}
                 ).data
             }
         }
 
-        # Stats supplémentaires pour les admins
-        if user.is_admin():
-            # Calcul des statistiques sur 30 jours
+        # Stats admin
+        if user.user_type == 'admin':
             thirty_days_ago = datetime.now() - timedelta(days=30)
-            
-            # Calcul des paiements sur 30 jours
-            monthly_payments = Payment.objects.filter(
-                creation_time__gte=thirty_days_ago,
-                status='succeeded'
-            ).aggregate(
-                total=Sum('amount')
-            )['total'] or 0
-            
-            admin_stats = {
-                'total_users': User.objects.count(),
-                'total_regular_users': User.objects.filter(user_type='user').count(),
-                'total_active_members': User.objects.filter(
-                    payments__status='succeeded'
-                ).distinct().count(),
-                'payment_stats': {
-                    'total_amount': Payment.objects.filter(
-                        status='succeeded'
-                    ).aggregate(total=Sum('amount'))['total'] or 0,
-                    'monthly_amount': monthly_payments,
-                    'recent_payments': list(Payment.objects.filter(
-                        status='succeeded'
-                    ).order_by('-creation_time')[:5].values(
-                        'amount', 'creation_time', 'status', 'currency'
-                    ))
-                },
-                'user_growth': {
-                    'monthly_new_users': User.objects.filter(
-                        date_joined__gte=thirty_days_ago
-                    ).count(),
-                    'monthly_new_members': Payment.objects.filter(
-                        creation_time__gte=thirty_days_ago,
-                        status='succeeded'
-                    ).values('user_id').distinct().count()
-                }
-            }
-            base_stats.update(admin_stats)
-            
+            base_stats.update({
+                'total_members': User.objects.filter(user_type='user').count(),
+                'total_admins': User.objects.filter(user_type='admin').count(),
+               
+            })
+
         return Response(base_stats)
 
 
