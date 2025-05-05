@@ -314,8 +314,8 @@ class UserViewSet(viewsets.ModelViewSet):
                 ).data,
                 'events': EventSerializer(
                     Event.objects.filter(
-                        start_datetime__gte=datetime.now()
-                    ).order_by('start_datetime')[:5],
+                        user_id=user
+                    ).order_by('-start_datetime')[:5],
                     many=True,
                     context={'request': request}
                 ).data,
@@ -333,8 +333,16 @@ class UserViewSet(viewsets.ModelViewSet):
             base_stats.update({
                 'total_members': User.objects.filter(user_type='user').count(),
                 'total_admins': User.objects.filter(user_type='admin').count(),
-               
+                'stripe_payments': {
+                    'total_amount': float(Payment.objects.filter(status='succeeded').aggregate(total=Sum('amount'))['total'] or 0),
+                    'count': Payment.objects.filter(status='succeeded').count(),
+                    'recent': list(Payment.objects.filter(status='succeeded').order_by('-creation_time')[:5].values(
+                        'amount', 'creation_time', 'status', 'currency', 'payment_type'
+                    )),
+                },
+                
             })
+            
 
         return Response(base_stats)
 
