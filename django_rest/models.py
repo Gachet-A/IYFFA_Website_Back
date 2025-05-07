@@ -247,6 +247,8 @@ class Payment(models.Model):
     subscription_id = models.CharField(max_length=100, null=True, blank=True)  # For monthly donations
     creation_time = models.DateTimeField(auto_now_add=True)
     update_time = models.DateTimeField(auto_now=True)
+    receipt_pdf_path = models.CharField(max_length=255, null=True, blank=True)  # Path to the generated PDF
+    receipt_generated_at = models.DateTimeField(null=True, blank=True)  # When the PDF was generated
     
     class Meta:
         db_table = 'ifa_payment'

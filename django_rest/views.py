@@ -31,6 +31,8 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
 import json
 import logging
+from .services.pdf_generator import DonationReceiptGenerator
+from django.core.mail import EmailMessage
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -983,10 +985,35 @@ def send_payment_confirmation_email(payment_data):
     """
     Sends a confirmation email for successful payments.
     Handles different email templates based on payment type.
+    Generates and attaches a PDF receipt.
     """
     try:
         logger.info(f"Attempting to send payment confirmation email to {payment_data.get('email')}")
         logger.info(f"Payment data: {payment_data}")
+
+        # Generate PDF receipt
+        pdf_generator = DonationReceiptGenerator()
+        
+        # Prepare data for PDF generation
+        pdf_data = {
+            'amount': payment_data.get('amount'),
+            'currency': payment_data.get('currency'),
+            'payment_method': payment_data.get('payment_method'),
+            'donor_name': payment_data.get('name'),
+            'donor_address': payment_data.get('address', 'Not provided'),
+            'payment_date': datetime.now(),
+            'transaction_id': payment_data.get('stripe_id', 'N/A')
+        }
+        
+        # Generate PDF
+        pdf_path = pdf_generator.generate_receipt(pdf_data)
+        
+        # Update payment record with PDF information
+        payment = Payment.objects.filter(stripe_payment_id=payment_data.get('stripe_id')).first()
+        if payment:
+            payment.receipt_pdf_path = pdf_path
+            payment.receipt_generated_at = datetime.now()
+            payment.save()
 
         subject = f"Thank you for your Gift!"
         message = f"""
@@ -1004,6 +1031,8 @@ def send_payment_confirmation_email(payment_data):
             """
 
         message += f"""
+        Please find attached your donation receipt.
+
         If you have any questions, please contact us at {settings.DEFAULT_FROM_EMAIL}
 
         Best regards,
@@ -1015,13 +1044,19 @@ def send_payment_confirmation_email(payment_data):
         logger.info(f"From email: {settings.DEFAULT_FROM_EMAIL}")
         logger.info(f"To email: {payment_data.get('email')}")
 
-        result = send_mail(
+        # Send email with PDF attachment
+        email = EmailMessage(
             subject,
             message,
             settings.DEFAULT_FROM_EMAIL,
-            [payment_data.get('email')],
-            fail_silently=False,
+            [payment_data.get('email')]
         )
+        
+        # Attach the PDF
+        with open(pdf_path, 'rb') as f:
+            email.attach('donation_receipt.pdf', f.read(), 'application/pdf')
+        
+        result = email.send(fail_silently=False)
 
         if result:
             logger.info(f"Confirmation email sent successfully to {payment_data.get('email')}")
@@ -1310,7 +1345,7 @@ class PaymentViewSet(viewsets.ModelViewSet):
             elif event.type == 'customer.subscription.deleted':
                 subscription = event.data.object
                 payment = Payment.objects.filter(subscription_id=subscription.id).first()
-            if payment:
+                if payment:
                     payment.status = 'canceled'
                     payment.save()
 
