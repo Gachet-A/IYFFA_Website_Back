@@ -1016,7 +1016,95 @@ def send_payment_confirmation_email(payment_data):
             payment.save()
 
         subject = f"Thank you for your Gift!"
-        message = f"""
+        
+        # HTML email template
+        html_message = f"""
+        <html>
+        <head>
+            <style>
+                body {{
+                    font-family: Arial, sans-serif;
+                    line-height: 1.6;
+                    color: #333;
+                    max-width: 600px;
+                    margin: 0 auto;
+                    padding: 20px;
+                }}
+                .header {{
+                    text-align: center;
+                    padding: 20px 0;
+                    background-color: #f8f9fa;
+                    border-radius: 5px;
+                    margin-bottom: 20px;
+                }}
+                .content {{
+                    background-color: #ffffff;
+                    padding: 20px;
+                    border-radius: 5px;
+                    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+                }}
+                .amount {{
+                    font-size: 24px;
+                    color: #28a745;
+                    font-weight: bold;
+                    text-align: center;
+                    margin: 20px 0;
+                }}
+                .footer {{
+                    margin-top: 30px;
+                    padding-top: 20px;
+                    border-top: 1px solid #eee;
+                    font-size: 14px;
+                    color: #666;
+                }}
+                .button {{
+                    display: inline-block;
+                    padding: 10px 20px;
+                    background-color: #007bff;
+                    color: white;
+                    text-decoration: none;
+                    border-radius: 5px;
+                    margin: 20px 0;
+                }}
+            </style>
+        </head>
+        <body>
+            <div class="header">
+                <h1>Thank You for Your Support!</h1>
+            </div>
+            <div class="content">
+                <p>Dear {payment_data.get('name', 'Valued Donor')},</p>
+                
+                <p>We are incredibly grateful for your generous gift of:</p>
+                <div class="amount">
+                    {payment_data.get('amount')} {payment_data.get('currency')}
+                </div>
+                <p>Your donation through {payment_data.get('payment_method')} has been successfully processed.</p>
+        """
+
+        if payment_data.get('payment_type') == 'monthly_donation':
+            html_message += f"""
+                <p>Your monthly donation of {payment_data.get('amount')} {payment_data.get('currency')} will be automatically processed each month.</p>
+                <p>To manage your subscription, you can:</p>
+                <a href="{payment_data.get('cancel_url')}" class="button">Manage Your Subscription</a>
+            """
+
+        html_message += f"""
+                <p>Please find attached your donation receipt for your records.</p>
+                
+                <p>Your support makes a real difference in our mission. Thank you for being part of our community!</p>
+                
+                <div class="footer">
+                    <p>If you have any questions, please don't hesitate to contact us at {settings.DEFAULT_FROM_EMAIL}</p>
+                    <p>Best regards,<br>The IYFFA Team</p>
+                </div>
+            </div>
+        </body>
+        </html>
+        """
+
+        # Plain text version for email clients that don't support HTML
+        plain_message = f"""
         Dear {payment_data.get('name', 'Valued Donor')},
 
         Thank you for your gift of {payment_data.get('amount')} {payment_data.get('currency')} through {payment_data.get('payment_method')}
@@ -1024,13 +1112,13 @@ def send_payment_confirmation_email(payment_data):
         """
 
         if payment_data.get('payment_type') == 'monthly_donation':
-            message += f"""
+            plain_message += f"""
             Your monthly donation of {payment_data.get('amount')} {payment_data.get('currency')} will be automatically processed each month.
             
             To manage your subscription (including cancellation), click here: {payment_data.get('cancel_url')}
             """
 
-        message += f"""
+        plain_message += f"""
         Please find attached your donation receipt.
 
         If you have any questions, please contact us at {settings.DEFAULT_FROM_EMAIL}
@@ -1040,17 +1128,20 @@ def send_payment_confirmation_email(payment_data):
         """
 
         logger.info(f"Sending email with subject: {subject}")
-        logger.info(f"Email content: {message}")
         logger.info(f"From email: {settings.DEFAULT_FROM_EMAIL}")
         logger.info(f"To email: {payment_data.get('email')}")
 
         # Send email with PDF attachment
         email = EmailMessage(
             subject,
-            message,
+            plain_message,
             settings.DEFAULT_FROM_EMAIL,
             [payment_data.get('email')]
         )
+        
+        # Set HTML content
+        email.content_subtype = "html"
+        email.body = html_message
         
         # Attach the PDF
         with open(pdf_path, 'rb') as f:
