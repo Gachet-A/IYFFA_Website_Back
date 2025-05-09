@@ -57,6 +57,7 @@ class User(AbstractUser):
     stripe_id = models.CharField(max_length=100, blank=True, null=True)
     otp_enabled = models.BooleanField(default=False)
     otp_secret = models.CharField(max_length=32, null=True, blank=True)
+    otp_secret_created_at = models.DateTimeField(null=True, blank=True)  # Track when OTP/reset tokens are created
     stripe_customer_id = models.CharField(max_length=100, null=True, blank=True)
     subscription_status = models.CharField(max_length=20, null=True, blank=True)
     subscription_id = models.CharField(max_length=100, null=True, blank=True)
