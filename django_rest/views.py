@@ -481,35 +481,34 @@ class ArticleViewSet(viewsets.ModelViewSet):
 class ProjectViewSet(viewsets.ModelViewSet):
     """
     ViewSet for managing projects.
-    Public read access, authenticated write access.
-    Handles project proposals and admin approval.
+    - Admins can see all projects
+    - Members can see approved projects and their own projects
+    - Non-members cannot access projects
     """
     queryset = Project.objects.all()
     serializer_class = ProjectSerializer
     
     def get_permissions(self):
-        """Require authentication only for write operations"""
-        if self.action in ['create', 'update', 'partial_update', 'destroy']:
-            return [IsAuthenticated()]
-        return [AllowAny()]
-
+        """Require authentication for all operations"""
+        return [IsAuthenticated()]
+    
     def get_queryset(self):
         """Filter projects based on user permissions"""
         queryset = Project.objects.all()
         
-        # If user is not authenticated, only show approved projects
+        # If user is not authenticated, return empty queryset
         if not self.request.user.is_authenticated:
-            return queryset.filter(status='approved')
+            return Project.objects.none()
             
-        # If user is authenticated but not admin, show their projects (regardless of status) and approved ones
-        if not self.request.user.is_admin():
-            return queryset.filter(
-                models.Q(user_id=self.request.user) | 
-                models.Q(status='approved')
-            ).order_by('-created_at')
+        # If user is admin, show all projects
+        if self.request.user.is_admin():
+            return queryset.order_by('-created_at')
             
-        # Admin users see all projects
-        return queryset.order_by('-created_at')
+        # If user is a member, show approved projects and their own projects
+        return queryset.filter(
+            models.Q(status='approved') | 
+            models.Q(user_id=self.request.user)
+        ).order_by('-created_at')
 
     @transaction.atomic
     def create(self, request, *args, **kwargs):
@@ -560,6 +559,19 @@ class ProjectViewSet(viewsets.ModelViewSet):
                     subject=f'New Project Proposal: {project.title}',
                     recipient_list=list(admin_emails)
                 )
+            
+            # Send confirmation email to the proposer
+            proposer_context = {
+                'name': f"{request.user.first_name} {request.user.last_name}",
+                'project_title': project.title
+            }
+            
+            send_html_email(
+                template_name='project_proposal_confirmation',
+                context=proposer_context,
+                subject=f'Your Project Proposal: {project.title}',
+                recipient_list=[request.user.email]
+            )
             
             serializer = self.get_serializer(project)
             return Response(serializer.data, status=status.HTTP_201_CREATED)
@@ -632,6 +644,44 @@ class ProjectViewSet(viewsets.ModelViewSet):
             {"message": "Project rejected successfully"},
             status=status.HTTP_200_OK
         )
+
+    @transaction.atomic
+    def update(self, request, *args, **kwargs):
+        """Update project and its documents"""
+        try:
+            project = self.get_object()
+            
+            # Update project fields
+            project.title = request.data.get('title', project.title)
+            project.description = request.data.get('description', project.description)
+            project.budget = request.data.get('budget', project.budget)
+            project.save()
+            
+            # Handle document updates
+            existing_documents = request.data.getlist('existing_documents', [])
+            new_documents = request.FILES.getlist('documents')
+            document_positions = request.data.getlist('document_positions', [])
+            
+            # Delete documents that are not in existing_documents
+            current_document_ids = [int(doc_id) for doc_id in existing_documents if doc_id]
+            project.documents.exclude(id__in=current_document_ids).delete()
+            
+            # Add new documents
+            for doc, position in zip(new_documents, document_positions):
+                Document.objects.create(
+                    file=doc,
+                    position=position,
+                    project_id=project
+                )
+            
+            serializer = self.get_serializer(project)
+            return Response(serializer.data)
+            
+        except Exception as e:
+            return Response(
+                {'error': str(e)},
+                status=status.HTTP_400_BAD_REQUEST
+            )
 
     def destroy(self, request, *args, **kwargs):
         """Delete a project"""
