@@ -20,6 +20,8 @@ from .serializers import (
 )
 from .permissions import IsAdminUser
 from django.core.mail import send_mail
+from django.template.loader import render_to_string
+from django.core.mail import EmailMultiAlternatives
 import random
 from django.db import transaction
 from drf_yasg.utils import swagger_auto_schema
@@ -31,12 +33,43 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
 import json
 import logging
+from django.db import models
 
 # Configure logging
 logger = logging.getLogger(__name__)
 
 # Initialize Stripe with the secret key from settings
 stripe.api_key = settings.STRIPE_SECRET_KEY
+
+def send_html_email(template_name, context, subject, recipient_list):
+    """
+    Send an HTML email using the specified template.
+    
+    Args:
+        template_name: The name of the template to use (without .html)
+        context: Dictionary of context variables for the template
+        subject: Email subject
+        recipient_list: List of recipient email addresses
+    """
+    try:
+        # Render the HTML content
+        html_content = render_to_string(f'emails/{template_name}.html', context)
+        
+        # Create the email message
+        msg = EmailMultiAlternatives(
+            subject=subject,
+            body=html_content,  # This will be the fallback for non-HTML email clients
+            from_email=settings.DEFAULT_FROM_EMAIL,
+            to=recipient_list
+        )
+        msg.attach_alternative(html_content, "text/html")
+        
+        # Send the email
+        msg.send()
+        return True
+    except Exception as e:
+        logger.error(f"Error sending email: {str(e)}")
+        return False
 
 class UserViewSet(viewsets.ModelViewSet):
     """
@@ -449,6 +482,7 @@ class ProjectViewSet(viewsets.ModelViewSet):
     """
     ViewSet for managing projects.
     Public read access, authenticated write access.
+    Handles project proposals and admin approval.
     """
     queryset = Project.objects.all()
     serializer_class = ProjectSerializer
@@ -459,9 +493,174 @@ class ProjectViewSet(viewsets.ModelViewSet):
             return [IsAuthenticated()]
         return [AllowAny()]
 
-    def perform_create(self, serializer):
-        """Automatically set the current user as the project owner"""
-        serializer.save(pro_user_id=self.request.user)
+    def get_queryset(self):
+        """Filter projects based on user permissions"""
+        queryset = Project.objects.all()
+        
+        # If user is not authenticated, only show approved projects
+        if not self.request.user.is_authenticated:
+            return queryset.filter(status='approved')
+            
+        # If user is authenticated but not admin, show their projects (regardless of status) and approved ones
+        if not self.request.user.is_admin():
+            return queryset.filter(
+                models.Q(user_id=self.request.user) | 
+                models.Q(status='approved')
+            ).order_by('-created_at')
+            
+        # Admin users see all projects
+        return queryset.order_by('-created_at')
+
+    @transaction.atomic
+    def create(self, request, *args, **kwargs):
+        """Create a new project proposal"""
+        try:
+            # Create project with initial status as 'pending'
+            project_data = {
+                'title': request.data.get('title'),
+                'description': request.data.get('description'),
+                'budget': request.data.get('budget'),
+                'user_id': request.user,
+                'status': 'pending'  # Initial status
+            }
+            
+            # Handle document uploads if any
+            documents = request.FILES.getlist('documents')
+            document_positions = request.data.getlist('document_positions', [])
+            
+            # Create the project
+            project = Project.objects.create(**project_data)
+            
+            # Create document records if any
+            for doc, position in zip(documents, document_positions):
+                Document.objects.create(
+                    file=doc,
+                    position=position,
+                    project_id=project
+                )
+            
+            # Send email to admin for approval
+            admin_emails = User.objects.filter(
+                user_type='admin'
+            ).values_list('email', flat=True)
+            
+            if admin_emails:
+                context = {
+                    'project_title': project.title,
+                    'project_description': project.description,
+                    'project_budget': project.budget,
+                    'proposer_name': f"{request.user.first_name} {request.user.last_name}",
+                    'proposer_email': request.user.email,
+                    'project_id': project.id
+                }
+                
+                send_html_email(
+                    template_name='project_proposal',
+                    context=context,
+                    subject=f'New Project Proposal: {project.title}',
+                    recipient_list=list(admin_emails)
+                )
+            
+            serializer = self.get_serializer(project)
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+            
+        except Exception as e:
+            return Response(
+                {'error': str(e)},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+    @action(detail=True, methods=['post'])
+    def approve(self, request, pk=None):
+        """Approve a project proposal (admin only)"""
+        if not request.user.is_admin():
+            return Response(
+                {"error": "Only administrators can approve projects"},
+                status=status.HTTP_403_FORBIDDEN
+            )
+            
+        project = self.get_object()
+        project.status = 'approved'
+        project.save()
+        
+        # Send email to project proposer
+        context = {
+            'name': f"{project.user_id.first_name} {project.user_id.last_name}",
+            'project_title': project.title
+        }
+        
+        send_html_email(
+            template_name='project_approved',
+            context=context,
+            subject=f'Your Project "{project.title}" has been approved',
+            recipient_list=[project.user_id.email]
+        )
+        
+        return Response(
+            {"message": "Project approved successfully"},
+            status=status.HTTP_200_OK
+        )
+
+    @action(detail=True, methods=['post'])
+    def reject(self, request, pk=None):
+        """Reject a project proposal (admin only)"""
+        if not request.user.is_admin():
+            return Response(
+                {"error": "Only administrators can reject projects"},
+                status=status.HTTP_403_FORBIDDEN
+            )
+            
+        project = self.get_object()
+        project.status = 'rejected'
+        project.save()
+        
+        # Send email to project proposer
+        context = {
+            'name': f"{project.user_id.first_name} {project.user_id.last_name}",
+            'project_title': project.title,
+            'rejection_reason': request.data.get('reason', 'No reason provided')
+        }
+        
+        send_html_email(
+            template_name='project_rejected',
+            context=context,
+            subject=f'Your Project "{project.title}" has been rejected',
+            recipient_list=[project.user_id.email]
+        )
+        
+        return Response(
+            {"message": "Project rejected successfully"},
+            status=status.HTTP_200_OK
+        )
+
+    def destroy(self, request, *args, **kwargs):
+        """Delete a project"""
+        try:
+            project = self.get_object()
+            
+            # Check if user is admin or project owner
+            if not request.user.is_admin() and project.user_id != request.user:
+                return Response(
+                    {"error": "You don't have permission to delete this project"},
+                    status=status.HTTP_403_FORBIDDEN
+                )
+            
+            # Delete associated documents first
+            project.documents.all().delete()
+            
+            # Delete the project
+            project.delete()
+            
+            return Response(
+                {"message": "Project deleted successfully"},
+                status=status.HTTP_204_NO_CONTENT
+            )
+            
+        except Exception as e:
+            return Response(
+                {'error': str(e)},
+                status=status.HTTP_400_BAD_REQUEST
+            )
 
 class DocumentViewSet(viewsets.ModelViewSet):
     """
@@ -717,13 +916,17 @@ class LoginView(APIView):
                 user.otp_secret = otp
                 user.save()
                 
-                # Send OTP via email
-                send_mail(
-                    'Your Login Verification Code',
-                    f'Your verification code is: {otp}\nEnter this code to complete your login.',
-                    settings.DEFAULT_FROM_EMAIL,
-                    [user.email],
-                    fail_silently=False,
+                # Send OTP via email using HTML template
+                context = {
+                    'name': f"{user.first_name} {user.last_name}",
+                    'otp': otp
+                }
+                
+                send_html_email(
+                    template_name='2fa_verification',
+                    context=context,
+                    subject='Your Login Verification Code',
+                    recipient_list=[user.email]
                 )
                 
                 return Response({
@@ -810,16 +1013,20 @@ class Enable2FAView(APIView):
         user.save()
         
         try:
-            # Send OTP via email
-            sent = send_mail(
-                subject='Your 2FA Verification Code',
-                message=f'Your verification code is: {otp}\nEnter this code to complete 2FA setup.',
-                from_email=None,  # Will use DEFAULT_FROM_EMAIL from settings
-                recipient_list=[user.email],
-                fail_silently=False,
+            # Send OTP via email using HTML template
+            context = {
+                'name': f"{user.first_name} {user.last_name}",
+                'otp': otp
+            }
+            
+            success = send_html_email(
+                template_name='2fa_verification',
+                context=context,
+                subject='Your 2FA Setup Verification Code',
+                recipient_list=[user.email]
             )
             
-            if sent == 1:
+            if success:
                 return Response({
                     "message": "2FA setup initiated. Check your email for the verification code.",
                     "next_step": "Verify this setup by making a POST request to /api/auth/2fa/verify/ with the code from your email"
@@ -988,46 +1195,28 @@ def send_payment_confirmation_email(payment_data):
         logger.info(f"Attempting to send payment confirmation email to {payment_data.get('email')}")
         logger.info(f"Payment data: {payment_data}")
 
-        subject = f"Thank you for your Gift!"
-        message = f"""
-        Dear {payment_data.get('name', 'Valued Donor')},
+        # Prepare the context for the template
+        context = {
+            'name': payment_data.get('name', 'Valued Donor'),
+            'amount': payment_data.get('amount'),
+            'currency': payment_data.get('currency'),
+            'payment_type': payment_data.get('payment_type'),
+            'cancel_url': payment_data.get('cancel_url')
+        }
 
-        Thank you for your gift of {payment_data.get('amount')} {payment_data.get('currency')} through {payment_data.get('payment_method')}
-
-        """
-
-        if payment_data.get('payment_type') == 'monthly_donation':
-            message += f"""
-            Your monthly donation of {payment_data.get('amount')} {payment_data.get('currency')} will be automatically processed each month.
-            
-            To manage your subscription (including cancellation), click here: {payment_data.get('cancel_url')}
-            """
-
-        message += f"""
-        If you have any questions, please contact us at {settings.DEFAULT_FROM_EMAIL}
-
-        Best regards,
-        IYFFA Team
-        """
-
-        logger.info(f"Sending email with subject: {subject}")
-        logger.info(f"Email content: {message}")
-        logger.info(f"From email: {settings.DEFAULT_FROM_EMAIL}")
-        logger.info(f"To email: {payment_data.get('email')}")
-
-        result = send_mail(
-            subject,
-            message,
-            settings.DEFAULT_FROM_EMAIL,
-            [payment_data.get('email')],
-            fail_silently=False,
+        # Send the HTML email
+        success = send_html_email(
+            template_name='payment_confirmation',
+            context=context,
+            subject=f"Thank you for your Gift!",
+            recipient_list=[payment_data.get('email')]
         )
 
-        if result:
+        if success:
             logger.info(f"Confirmation email sent successfully to {payment_data.get('email')}")
             return True
         else:
-            logger.error(f"Failed to send confirmation email to {payment_data.get('email')} - send_mail returned False")
+            logger.error(f"Failed to send confirmation email to {payment_data.get('email')}")
             return False
 
     except Exception as e:

@@ -124,11 +124,20 @@ class Project(models.Model):
     Project model for managing user projects.
     Includes budget tracking and project details.
     """
+    STATUS_CHOICES = (
+        ('pending', 'Pending'),
+        ('approved', 'Approved'),
+        ('rejected', 'Rejected'),
+    )
+    
     id = models.AutoField(primary_key=True)
     title = models.CharField(max_length=45)
     description = models.TextField()
     budget = models.FloatField()
     user_id = models.ForeignKey(User, on_delete=models.CASCADE, db_column="user_id")
+    status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='pending')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         db_table = 'ifa_project'
@@ -143,11 +152,17 @@ class Document(models.Model):
     Links documents to specific projects.
     """
     id = models.AutoField(primary_key=True)
-    url = models.CharField(max_length=255)
-    user_id = models.ForeignKey(Project, on_delete=models.CASCADE, db_column="project_id")
+    file = models.FileField(upload_to='project_documents/')
+    position = models.IntegerField(default=0)
+    project_id = models.ForeignKey(Project, on_delete=models.CASCADE, related_name='documents')
+    created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         db_table = 'ifa_document'
+        ordering = ['position']
+
+    def __str__(self):
+        return f"Document for {self.project_id.title}"
 
 # Event model
 class Event(models.Model):

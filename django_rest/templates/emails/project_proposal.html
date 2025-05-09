@@ -1,0 +1,24 @@
+{% extends "emails/base.html" %}
+
+{% block title %}New Project Proposal - IYFFA{% endblock %}
+
+{% block header %}New Project Proposal{% endblock %}
+
+{% block content %}
+<p>Dear Admin,</p>
+
+<p>A new project has been proposed by {{ proposer_name }} ({{ proposer_email }}):</p>
+
+<div class="project-details">
+    <h3>{{ project_title }}</h3>
+    <p><strong>Budget:</strong> {{ project_budget }} CHF</p>
+    <p><strong>Description:</strong></p>
+    <p>{{ project_description }}</p>
+</div>
+
+<p>Please review this proposal and take appropriate action.</p>
+
+<div class="button-container">
+    <a href="http://localhost:8080/admin/projects/{{ project_id }}" class="button">Review Project</a>
+</div>
+{% endblock %} 

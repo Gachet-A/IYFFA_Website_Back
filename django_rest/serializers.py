@@ -85,6 +85,16 @@ class UserSerializer(serializers.ModelSerializer):
             
         return super().update(instance, validated_data)
 
+# Document Serializer
+class DocumentSerializer(serializers.ModelSerializer):
+    """
+    Serializer for Document model.
+    Handles project document metadata.
+    """
+    class Meta:
+        model = Document
+        fields = '__all__'
+
 # Article Serializer
 class ArticleSerializer(serializers.ModelSerializer):
     """Serializer for articles with author details"""
@@ -113,20 +123,54 @@ class ProjectSerializer(serializers.ModelSerializer):
     Serializer for Project model.
     Handles project details and budget information.
     """
+    documents = DocumentSerializer(many=True, read_only=True)
+    uploaded_documents = serializers.ListField(
+        child=serializers.FileField(),
+        write_only=True,
+        required=False
+    )
+    document_positions = serializers.ListField(
+        child=serializers.IntegerField(),
+        write_only=True,
+        required=False
+    )
+    author_name = serializers.SerializerMethodField()
+    formatted_date = serializers.SerializerMethodField()
+
     class Meta:
         model = Project
-        fields = '__all__'
+        fields = [
+            'id', 'title', 'description', 'budget', 
+            'user_id', 'status', 'created_at', 'updated_at',
+            'documents', 'uploaded_documents', 'document_positions',
+            'author_name', 'formatted_date'
+        ]
+        read_only_fields = ['id', 'user_id', 'created_at', 'updated_at']
 
-# Document Serializer
-class DocumentSerializer(serializers.ModelSerializer):
-    """
-    Serializer for Document model.
-    Handles project document metadata.
-    """
-    class Meta:
-        model = Document
-        fields = '__all__'
+    def get_author_name(self, obj):
+        return f"{obj.user_id.first_name} {obj.user_id.last_name}"
+
+    def get_formatted_date(self, obj):
+        return obj.created_at.strftime("%B %d, %Y")
+
+    def create(self, validated_data):
+        """Handle project creation with documents"""
+        uploaded_documents = validated_data.pop('uploaded_documents', [])
+        document_positions = validated_data.pop('document_positions', [])
         
+        # Create project
+        project = Project.objects.create(**validated_data)
+        
+        # Create documents
+        for doc, position in zip(uploaded_documents, document_positions):
+            Document.objects.create(
+                file=doc,
+                position=position,
+                project_id=project
+            )
+        
+        return project
+
 # Image Serializer
 class ImageSerializer(serializers.ModelSerializer):
     """Serializer for event images"""
