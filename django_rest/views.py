@@ -338,7 +338,7 @@ class UserViewSet(viewsets.ModelViewSet):
             'personal_stats': {
                 'my_articles': Article.objects.filter(user_id=user).count(),
                 'my_events': Event.objects.filter(user_id=user).count(),
-                # Ajoute ici d'autres stats personnelles si besoin
+                'my_projects': Project.objects.filter(user_id=user).count(),
             },
             'recent_activities': {
                 'articles': ArticleSerializer(
@@ -354,9 +354,9 @@ class UserViewSet(viewsets.ModelViewSet):
                     context={'request': request}
                 ).data,
                 'projects': ProjectSerializer(
-                    Project.objects.order_by('-id')[:5],
-                    many=True,
-                    context={'request': request}
+                Project.objects.order_by('-id')[:5],
+                many=True,
+                context={'request': request}
                 ).data
             }
         }
