@@ -33,6 +33,7 @@ import json
 import logging
 from .services.pdf_generator import DonationReceiptGenerator
 from django.core.mail import EmailMessage
+import os
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -1177,11 +1178,15 @@ class PaymentViewSet(viewsets.ModelViewSet):
         return super().get_permissions()
 
     def get_queryset(self):
-        """Filter payments to show only those belonging to the current user"""
+        """Filter payments based on user role"""
         queryset = Payment.objects.all()
         
-        # Always filter by the current user
-        queryset = queryset.filter(user=self.request.user)
+        # If user is admin, return all payments
+        if self.request.user.is_admin():
+            return queryset
+        
+        # For regular users, return only their payments
+        return queryset.filter(user=self.request.user)
         
         # If filtering by subscription_id, add that filter
         subscription_id = self.request.query_params.get('subscription_id', None)
@@ -1445,3 +1450,35 @@ class PaymentViewSet(viewsets.ModelViewSet):
         except Exception as e:
             logger.error(f"Error processing webhook: {str(e)}")
             return HttpResponse(status=500)
+
+    @action(detail=True, methods=['get'])
+    def receipt(self, request, pk=None):
+        """Download payment receipt"""
+        try:
+            payment = self.get_object()
+            
+            if not payment.receipt_pdf_path:
+                return Response(
+                    {'error': 'No receipt available for this payment'},
+                    status=status.HTTP_404_NOT_FOUND
+                )
+            
+            # Check if file exists
+            if not os.path.exists(payment.receipt_pdf_path):
+                return Response(
+                    {'error': 'Receipt file not found'},
+                    status=status.HTTP_404_NOT_FOUND
+                )
+            
+            # Open and return the file
+            with open(payment.receipt_pdf_path, 'rb') as f:
+                response = HttpResponse(f.read(), content_type='application/pdf')
+                response['Content-Disposition'] = f'attachment; filename="receipt-{payment.id}.pdf"'
+                return response
+                
+        except Exception as e:
+            logger.error(f"Error downloading receipt: {str(e)}")
+            return Response(
+                {'error': 'Failed to download receipt'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
