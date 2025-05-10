@@ -919,14 +919,14 @@ class LoginView(APIView):
                     status=status.HTTP_401_UNAUTHORIZED
                 )
             
-                if user.otp_enabled:
+            if user.otp_enabled:
                 # Generate new OTP
-                    otp = ''.join([str(random.randint(0, 9)) for _ in range(6)])
+                otp = ''.join([str(random.randint(0, 9)) for _ in range(6)])
                 
                 # Update user's OTP
-                    user.otp_secret = otp
-                    user.save()
-                    
+                user.otp_secret = otp
+                user.save()
+                
                 # Send OTP via email using HTML template
                 context = {
                     'name': f"{user.first_name} {user.last_name}",
@@ -938,8 +938,8 @@ class LoginView(APIView):
                     context=context,
                     subject='Your Login Verification Code',
                     recipient_list=[user.email]
-                    )
-                    
+                )
+                
                 return Response({
                     "otp_required": True,
                     "message": "Check your email for the verification code",
@@ -948,22 +948,24 @@ class LoginView(APIView):
                         "email": user.email,
                         "name": user.first_name,
                         "surname": user.last_name,
-                        "user_type": user.user_type
+                        "user_type": user.user_type,
+                        "otp_enabled": user.otp_enabled
                     }
                 })
-                
+            
             # If 2FA is not enabled, generate tokens directly
-                refresh = RefreshToken.for_user(user)
-                return Response({
-                    "access": str(refresh.access_token),
-                    "refresh": str(refresh),
-                    "user": {
-                        "id": user.id,
-                        "email": user.email,
-                        "name": user.first_name,
-                        "surname": user.last_name,
-                        "user_type": user.user_type
-                    }
+            refresh = RefreshToken.for_user(user)
+            return Response({
+                "access": str(refresh.access_token),
+                "refresh": str(refresh),
+                "user": {
+                    "id": user.id,
+                    "email": user.email,
+                    "name": user.first_name,
+                    "surname": user.last_name,
+                    "user_type": user.user_type,
+                    "otp_enabled": user.otp_enabled
+                }
             })
             
         except User.DoesNotExist:
@@ -998,7 +1000,8 @@ class VerifyOTPView(APIView):
                         "email": user.email,
                         "name": user.first_name,
                         "surname": user.last_name,
-                        "user_type": user.user_type
+                        "user_type": user.user_type,
+                        "otp_enabled": user.otp_enabled
                     }
                 }, status=200)
             else:
@@ -1080,9 +1083,23 @@ class Verify2FASetupView(APIView):
             user.otp_enabled = True
             user.otp_secret = None  # Clear the temporary OTP
             user.save()
+            
+            # Generate new tokens to reflect the change
+            refresh = RefreshToken.for_user(user)
+            
             return Response({
                 "message": "2FA setup completed successfully",
-                "status": "enabled"
+                "status": "enabled",
+                "access": str(refresh.access_token),
+                "refresh": str(refresh),
+                "user": {
+                    "id": user.id,
+                    "email": user.email,
+                    "name": user.first_name,
+                    "surname": user.last_name,
+                    "user_type": user.user_type,
+                    "otp_enabled": user.otp_enabled
+                }
             }, status=200)
         else:
             return Response({
@@ -1105,10 +1122,22 @@ class Disable2FAView(APIView):
         user.otp_enabled = False
         user.save()
         
-        return Response(
-            {'message': 'Two-factor authentication has been disabled'},
-            status=status.HTTP_200_OK
-        )
+        # Generate new tokens to reflect the change
+        refresh = RefreshToken.for_user(user)
+        
+        return Response({
+            'message': 'Two-factor authentication has been disabled',
+            'access': str(refresh.access_token),
+            'refresh': str(refresh),
+            'user': {
+                'id': user.id,
+                'email': user.email,
+                'name': user.first_name,
+                'surname': user.last_name,
+                'user_type': user.user_type,
+                'otp_enabled': user.otp_enabled
+            }
+        }, status=status.HTTP_200_OK)
 
 class LogoutView(APIView):
     """Handle user logout by blacklisting the refresh token"""
@@ -1152,9 +1181,20 @@ class RefreshTokenView(APIView):
             token = RefreshToken(refresh_token)
             access_token = str(token.access_token)
             
+            # Get the user from the token
+            user = User.objects.get(id=token.payload['user_id'])
+            
             return Response({
                 'access': access_token,
-                'refresh': str(token)
+                'refresh': str(token),
+                'user': {
+                    'id': user.id,
+                    'email': user.email,
+                    'name': user.first_name,
+                    'surname': user.last_name,
+                    'user_type': user.user_type,
+                    'otp_enabled': user.otp_enabled
+                }
             })
         except Exception as e:
             return Response(
