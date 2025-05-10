@@ -1221,7 +1221,8 @@ class PaymentViewSet(viewsets.ModelViewSet):
                 metadata={
                     'payment_type': payment_type,
                     'name': name,
-                    'email': email
+                    'email': email,
+                    'address': data.get('address')
                 }
             )
 
@@ -1381,7 +1382,7 @@ class PaymentViewSet(viewsets.ModelViewSet):
                 # Create payment record
                 Payment.objects.create(
                     stripe_payment_id=setup_intent.id,
-                    amount=int(float(setup_intent.metadata.get('amount', 0)) * 100),
+                    amount=int(float(setup_intent.metadata.get('amount', 0))),
                     currency='chf',
                     status='succeeded',
                     payment_type='monthly_donation',
@@ -1398,7 +1399,9 @@ class PaymentViewSet(viewsets.ModelViewSet):
                     'payment_type': 'monthly_donation',
                     'cancel_url': f"http://localhost:8080/cancel_subscription/{subscription.id}",
                     'currency': 'chf',
-                    'payment_method': 'card'
+                    'payment_method': 'card',
+                    'stripe_id': setup_intent.id,
+                    'address': setup_intent.metadata.get('address')
                 })
                 
                 return HttpResponse(status=200)
@@ -1434,7 +1437,8 @@ class PaymentViewSet(viewsets.ModelViewSet):
                     'email': email,
                     'name': payment_intent.metadata.get('name', 'Anonymous'),
                     'payment_type': payment_intent.metadata.get('payment_type', 'one_time_donation'),
-                    'payment_method': payment_method_type
+                    'payment_method': payment_method_type,
+                    'address': payment_intent.metadata.get('address')
                 }
                 send_payment_confirmation_email(email_data)
 
