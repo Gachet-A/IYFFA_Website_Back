@@ -1442,6 +1442,30 @@ class PaymentViewSet(viewsets.ModelViewSet):
                 }
                 send_payment_confirmation_email(email_data)
 
+            # Handle failed or canceled payments
+            elif event.type in ['payment_intent.payment_failed', 'payment_intent.canceled']:
+                payment_intent = event.data.object
+                email = payment_intent.receipt_email or payment_intent.metadata.get('email')
+                payment_status = 'failed' if event.type == 'payment_intent.payment_failed' else 'canceled'
+                payment_method_type = None
+                if hasattr(payment_intent, 'payment_method') and payment_intent.payment_method:
+                    try:
+                        payment_method = stripe.PaymentMethod.retrieve(payment_intent.payment_method)
+                        payment_method_type = payment_method.type
+                    except Exception:
+                        payment_method_type = None
+                payment_data = {
+                    'stripe_payment_id': payment_intent.id,
+                    'amount': payment_intent.amount / 100,
+                    'currency': payment_intent.currency,
+                    'status': payment_status,
+                    'payment_type': payment_intent.metadata.get('payment_type', 'one_time_donation'),
+                    'payment_method': payment_method_type
+                }
+                # Only create if not already exists
+                if not Payment.objects.filter(stripe_payment_id=payment_intent.id).exists():
+                    Payment.objects.create(**payment_data)
+
             elif event.type == 'customer.subscription.deleted':
                 subscription = event.data.object
                 payment = Payment.objects.filter(subscription_id=subscription.id).first()
@@ -1486,3 +1510,17 @@ class PaymentViewSet(viewsets.ModelViewSet):
                 {'error': 'Failed to download receipt'},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def payment_status(request):
+    payment_intent_id = request.GET.get('payment_intent')
+    if not payment_intent_id:
+        return Response({'error': 'Missing payment_intent parameter'}, status=400)
+    try:
+        payment = Payment.objects.filter(stripe_payment_id=payment_intent_id).first()
+        if not payment:
+            return Response({'error': 'Payment not found'}, status=404)
+        return Response({'status': payment.status})
+    except Exception as e:
+        return Response({'error': str(e)}, status=500)

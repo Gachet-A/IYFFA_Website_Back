@@ -12,8 +12,8 @@ from django.conf import settings
 class DonationReceiptGenerator:
     # Association information
     ASSOCIATION_NAME = "IYFFA"
-    ASSOCIATION_ADDRESS = "Your address here"  # TODO: Update with actual address
-    ASSOCIATION_CONTACT = "Your contact info"  # TODO: Update with actual contact
+    ASSOCIATION_ADDRESS = "Boulevard carl-vogt, 1205 Genève"  
+    ASSOCIATION_CONTACT = "contact@iyffa.org"  
 
     # PDF Layout constants
     PAGE_WIDTH, PAGE_HEIGHT = A4
