@@ -62,6 +62,7 @@ urlpatterns = [
     path('webhook/', PaymentViewSet.as_view({'post': 'webhook'}), name='stripe-webhook'),
     path('cancel_subscription/<str:pk>/', PaymentViewSet.as_view({'post': 'cancel_subscription'}), name='cancel-subscription'),
     path('payment-status/', payment_status, name='payment-status'),
+    path('membership_renewal_intent/', PaymentViewSet.as_view({'post': 'membership_renewal_intent'}), name='membership-renewal-intent'),
 
     # Documentation URLs
     path('docs/swagger<format>/', schema_view.without_ui(cache_timeout=0), name='schema-json'),

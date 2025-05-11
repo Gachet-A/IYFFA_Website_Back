@@ -133,3 +133,82 @@ class DonationReceiptGenerator:
         doc.build(story)
         
         return filepath 
+
+class CotisationReceiptGenerator:
+    ASSOCIATION_NAME = "IYFFA"
+    ASSOCIATION_ADDRESS = "Boulevard carl-vogt, 1205 Genève"
+    ASSOCIATION_CONTACT = "contact@iyffa.org"
+
+    PAGE_WIDTH, PAGE_HEIGHT = A4
+    MARGIN = 2 * cm
+    CONTENT_WIDTH = PAGE_WIDTH - 2 * MARGIN
+
+    def __init__(self):
+        self.styles = getSampleStyleSheet()
+        self._setup_styles()
+
+    def _setup_styles(self):
+        self.styles.add(ParagraphStyle(
+            name='ReceiptTitle',
+            parent=self.styles['Heading1'],
+            fontSize=16,
+            spaceAfter=30,
+            alignment=1
+        ))
+        self.styles.add(ParagraphStyle(
+            name='ReceiptSubTitle',
+            parent=self.styles['Heading2'],
+            fontSize=12,
+            spaceAfter=20,
+            alignment=1
+        ))
+        self.styles.add(ParagraphStyle(
+            name='ReceiptNormal',
+            parent=self.styles['Normal'],
+            fontSize=10,
+            spaceAfter=12
+        ))
+
+    def generate_receipt(self, payment_data):
+        filename = f"cotisation_receipt_{payment_data['transaction_id']}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
+        filepath = os.path.join(settings.MEDIA_ROOT, 'receipts', filename)
+        os.makedirs(os.path.dirname(filepath), exist_ok=True)
+        doc = SimpleDocTemplate(
+            filepath,
+            pagesize=A4,
+            rightMargin=self.MARGIN,
+            leftMargin=self.MARGIN,
+            topMargin=self.MARGIN,
+            bottomMargin=self.MARGIN
+        )
+        story = []
+        story.append(Paragraph("MEMBERSHIP RENEWAL RECEIPT", self.styles['ReceiptTitle']))
+        story.append(Spacer(1, 20))
+        story.append(Paragraph(f"Date: {datetime.now().strftime('%Y-%m-%d')}", self.styles['ReceiptNormal']))
+        story.append(Spacer(1, 20))
+        story.append(Paragraph("Association Information:", self.styles['ReceiptSubTitle']))
+        story.append(Paragraph(f"Name: {self.ASSOCIATION_NAME}", self.styles['ReceiptNormal']))
+        story.append(Paragraph(f"Address: {self.ASSOCIATION_ADDRESS}", self.styles['ReceiptNormal']))
+        story.append(Paragraph(f"Contact: {self.ASSOCIATION_CONTACT}", self.styles['ReceiptNormal']))
+        story.append(Spacer(1, 20))
+        story.append(Paragraph("Member Information:", self.styles['ReceiptSubTitle']))
+        story.append(Paragraph(f"Name: {payment_data['donor_name']}", self.styles['ReceiptNormal']))
+        story.append(Paragraph(f"Address: {payment_data['donor_address']}", self.styles['ReceiptNormal']))
+        story.append(Spacer(1, 20))
+        story.append(Paragraph("Membership Details:", self.styles['ReceiptSubTitle']))
+        story.append(Paragraph(f"Amount: {payment_data['amount']} {payment_data['currency']}", self.styles['ReceiptNormal']))
+        story.append(Paragraph(f"Payment Method: {payment_data['payment_method']}", self.styles['ReceiptNormal']))
+        story.append(Paragraph(f"Date: {payment_data['payment_date'].strftime('%Y-%m-%d')}", self.styles['ReceiptNormal']))
+        story.append(Paragraph(f"Transaction ID: {payment_data['transaction_id']}", self.styles['ReceiptNormal']))
+        story.append(Spacer(1, 20))
+        story.append(Paragraph("Membership Confirmation:", self.styles['ReceiptSubTitle']))
+        membership_text = """
+        This receipt confirms your membership renewal with IYFFA. Your membership is now active for one year from the payment date.
+        Thank you for your continued support and commitment to our mission!
+        """
+        story.append(Paragraph(membership_text, self.styles['ReceiptNormal']))
+        story.append(Spacer(1, 40))
+        story.append(Paragraph("_________________________", self.styles['ReceiptNormal']))
+        story.append(Paragraph("Signature", self.styles['ReceiptNormal']))
+        doc.build(story)
+        return filepath 

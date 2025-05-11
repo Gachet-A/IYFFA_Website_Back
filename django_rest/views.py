@@ -31,7 +31,7 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
 import json
 import logging
-from .services.pdf_generator import DonationReceiptGenerator
+from .services.pdf_generator import DonationReceiptGenerator, CotisationReceiptGenerator
 from django.core.mail import EmailMessage
 import os
 
@@ -992,10 +992,13 @@ def send_payment_confirmation_email(payment_data):
         logger.info(f"Attempting to send payment confirmation email to {payment_data.get('email')}")
         logger.info(f"Payment data: {payment_data}")
 
-        # Generate PDF receipt
-        pdf_generator = DonationReceiptGenerator()
-        
-        # Prepare data for PDF generation
+        is_cotisation = payment_data.get('payment_type') == 'cotisation'
+
+        # Use the correct PDF generator
+        if is_cotisation:
+            pdf_generator = CotisationReceiptGenerator()
+        else:
+            pdf_generator = DonationReceiptGenerator()
         pdf_data = {
             'amount': payment_data.get('amount'),
             'currency': payment_data.get('currency'),
@@ -1003,12 +1006,11 @@ def send_payment_confirmation_email(payment_data):
             'donor_name': payment_data.get('name'),
             'donor_address': payment_data.get('address', 'Not provided'),
             'payment_date': datetime.now(),
-            'transaction_id': payment_data.get('stripe_id', 'N/A')
+            'transaction_id': payment_data.get('stripe_id', 'N/A'),
+            'receipt_type': 'Membership Renewal' if is_cotisation else 'Donation'
         }
-        
-        # Generate PDF
         pdf_path = pdf_generator.generate_receipt(pdf_data)
-        
+
         # Update payment record with PDF information
         payment = Payment.objects.filter(stripe_payment_id=payment_data.get('stripe_id')).first()
         if payment:
@@ -1016,117 +1018,128 @@ def send_payment_confirmation_email(payment_data):
             payment.receipt_generated_at = datetime.now()
             payment.save()
 
-        subject = f"Thank you for your Gift!"
-        
-        # HTML email template
-        html_message = f"""
-        <html>
-        <head>
-            <style>
-                body {{
-                    font-family: Arial, sans-serif;
-                    line-height: 1.6;
-                    color: #333;
-                    max-width: 600px;
-                    margin: 0 auto;
-                    padding: 20px;
-                }}
-                .header {{
-                    text-align: center;
-                    padding: 20px 0;
-                    background-color: #f8f9fa;
-                    border-radius: 5px;
-                    margin-bottom: 20px;
-                }}
-                .content {{
-                    background-color: #ffffff;
-                    padding: 20px;
-                    border-radius: 5px;
-                    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-                }}
-                .amount {{
-                    font-size: 24px;
-                    color: #28a745;
-                    font-weight: bold;
-                    text-align: center;
-                    margin: 20px 0;
-                }}
-                .footer {{
-                    margin-top: 30px;
-                    padding-top: 20px;
-                    border-top: 1px solid #eee;
-                    font-size: 14px;
-                    color: #666;
-                }}
-                .button {{
-                    display: inline-block;
-                    padding: 10px 20px;
-                    background-color: #007bff;
-                    color: white;
-                    text-decoration: none;
-                    border-radius: 5px;
-                    margin: 20px 0;
-                }}
-            </style>
-        </head>
-        <body>
-            <div class="header">
-                <h1>Thank You for Your Support!</h1>
-            </div>
-            <div class="content">
-                <p>Dear {payment_data.get('name', 'Valued Donor')},</p>
-                
-                <p>We are incredibly grateful for your generous gift of:</p>
-                <div class="amount">
-                    {payment_data.get('amount')} {payment_data.get('currency')}
+        # Subject and message
+        if is_cotisation:
+            subject = "Thank you for renewing your membership!"
+            html_message = f"""
+            <html>
+            <head>...</head>
+            <body>
+                <div class=\"header\">
+                    <h1>Membership Renewal Confirmation</h1>
                 </div>
-                <p>Your donation through {payment_data.get('payment_method')} has been successfully processed.</p>
-        """
-
-        if payment_data.get('payment_type') == 'monthly_donation':
-            html_message += f"""
-                <p>Your monthly donation of {payment_data.get('amount')} {payment_data.get('currency')} will be automatically processed each month.</p>
-                <p>To manage your subscription, you can:</p>
-                <a href="{payment_data.get('cancel_url')}" class="button">Manage Your Subscription</a>
+                <div class=\"content\">
+                    <p>Dear {payment_data.get('name', 'Valued Member')},</p>
+                    <p>We are pleased to confirm your membership renewal of:</p>
+                    <div class=\"amount\">
+                        {payment_data.get('amount')} {payment_data.get('currency')}
+                    </div>
+                    <p>Your membership renewal through {payment_data.get('payment_method')} has been successfully processed.</p>
+                    <p>Your membership is now active for one year from today.</p>
+                    <p>Please find attached your membership renewal receipt for your records.</p>
+                    <p>Thank you for being part of our community!</p>
+                    <div class=\"footer\">
+                        <p>If you have any questions, please contact us at {settings.DEFAULT_FROM_EMAIL}</p>
+                        <p>Best regards,<br>The IYFFA Team</p>
+                    </div>
+                </div>
+            </body>
+            </html>
             """
+            plain_message = f"""
+            Dear {payment_data.get('name', 'Valued Member')},
 
-        html_message += f"""
-                <p>Please find attached your donation receipt for your records.</p>
-                
-                <p>Your support makes a real difference in our mission. Thank you for being part of our community!</p>
-                
-                <div class="footer">
-                    <p>If you have any questions, please don't hesitate to contact us at {settings.DEFAULT_FROM_EMAIL}</p>
-                    <p>Best regards,<br>The IYFFA Team</p>
+            Thank you for your membership renewal of {payment_data.get('amount')} {payment_data.get('currency')} through {payment_data.get('payment_method')}.
+            Your membership is now active for one year from today.
+
+            Please find attached your membership renewal receipt.
+
+            If you have any questions, please contact us at {settings.DEFAULT_FROM_EMAIL}
+
+            Best regards,
+            IYFFA Team
+            """
+        elif payment_data.get('payment_type') == 'monthly_donation':
+            subject = "Thank you for your Monthly Support!"
+            html_message = f"""
+            <html>
+            <head>...</head>
+            <body>
+                <div class=\"header\">
+                    <h1>Monthly Support Confirmation</h1>
                 </div>
-            </div>
-        </body>
-        </html>
-        """
+                <div class=\"content\">
+                    <p>Dear {payment_data.get('name', 'Valued Donor')},</p>
+                    <p>We are incredibly grateful for your monthly support of:</p>
+                    <div class=\"amount\">
+                        {payment_data.get('amount')} {payment_data.get('currency')}
+                    </div>
+                    <p>Your monthly donation through {payment_data.get('payment_method')} has been successfully processed.</p>
+                    <p>Your monthly donation of {payment_data.get('amount')} {payment_data.get('currency')} will be automatically processed each month.</p>
+                    <p>To manage your subscription, you can:</p>
+                    <a href=\"{payment_data.get('cancel_url', '#')}\" class=\"button\">Manage Your Subscription</a>
+                    <p>Please find attached your donation receipt for your records.</p>
+                    <p>Your support makes a real difference in our mission. Thank you for being part of our community!</p>
+                    <div class=\"footer\">
+                        <p>If you have any questions, please don't hesitate to contact us at {settings.DEFAULT_FROM_EMAIL}</p>
+                        <p>Best regards,<br>The IYFFA Team</p>
+                    </div>
+                </div>
+            </body>
+            </html>
+            """
+            plain_message = f"""
+            Dear {payment_data.get('name', 'Valued Donor')},
 
-        # Plain text version for email clients that don't support HTML
-        plain_message = f"""
-        Dear {payment_data.get('name', 'Valued Donor')},
-
-        Thank you for your gift of {payment_data.get('amount')} {payment_data.get('currency')} through {payment_data.get('payment_method')}
-
-        """
-
-        if payment_data.get('payment_type') == 'monthly_donation':
-            plain_message += f"""
+            Thank you for your monthly support of {payment_data.get('amount')} {payment_data.get('currency')} through {payment_data.get('payment_method')}.
             Your monthly donation of {payment_data.get('amount')} {payment_data.get('currency')} will be automatically processed each month.
-            
-            To manage your subscription (including cancellation), click here: {payment_data.get('cancel_url')}
+            To manage your subscription (including cancellation), click here: {payment_data.get('cancel_url', '#')}
+
+            Please find attached your donation receipt.
+
+            If you have any questions, please contact us at {settings.DEFAULT_FROM_EMAIL}
+
+            Best regards,
+            IYFFA Team
             """
+        else:
+            subject = f"Thank you for your Gift!"
+            html_message = f"""
+            <html>
+            <head>...</head>
+            <body>
+                <div class=\"header\">
+                    <h1>Thank You for Your Support!</h1>
+                </div>
+                <div class=\"content\">
+                    <p>Dear {payment_data.get('name', 'Valued Donor')},</p>
+                    <p>We are incredibly grateful for your generous gift of:</p>
+                    <div class=\"amount\">
+                        {payment_data.get('amount')} {payment_data.get('currency')}
+                    </div>
+                    <p>Your donation through {payment_data.get('payment_method')} has been successfully processed.</p>
+                    <p>Please find attached your donation receipt for your records.</p>
+                    <p>Your support makes a real difference in our mission. Thank you for being part of our community!</p>
+                    <div class=\"footer\">
+                        <p>If you have any questions, please don't hesitate to contact us at {settings.DEFAULT_FROM_EMAIL}</p>
+                        <p>Best regards,<br>The IYFFA Team</p>
+                    </div>
+                </div>
+            </body>
+            </html>
+            """
+            plain_message = f"""
+            Dear {payment_data.get('name', 'Valued Donor')},
 
-        plain_message += f"""
-        Please find attached your donation receipt.
+            Thank you for your gift of {payment_data.get('amount')} {payment_data.get('currency')} through {payment_data.get('payment_method')}
 
-        If you have any questions, please contact us at {settings.DEFAULT_FROM_EMAIL}
+            Please find attached your donation receipt.
 
-        Best regards,
-        IYFFA Team
-        """
+            If you have any questions, please contact us at {settings.DEFAULT_FROM_EMAIL}
+
+            Best regards,
+            IYFFA Team
+            """
 
         logger.info(f"Sending email with subject: {subject}")
         logger.info(f"From email: {settings.DEFAULT_FROM_EMAIL}")
@@ -1146,7 +1159,10 @@ def send_payment_confirmation_email(payment_data):
         
         # Attach the PDF
         with open(pdf_path, 'rb') as f:
-            email.attach('donation_receipt.pdf', f.read(), 'application/pdf')
+            if is_cotisation:
+                email.attach('membership_renewal_receipt.pdf', f.read(), 'application/pdf')
+            else:
+                email.attach('donation_receipt.pdf', f.read(), 'application/pdf')
         
         result = email.send(fail_silently=False)
 
@@ -1409,7 +1425,10 @@ class PaymentViewSet(viewsets.ModelViewSet):
             elif event.type == 'payment_intent.succeeded':
                 payment_intent = event.data.object
                 email = payment_intent.receipt_email or payment_intent.metadata.get('email')
-                
+                payment_type = payment_intent.metadata.get('payment_type', 'one_time_donation')
+                address = payment_intent.metadata.get('address')
+                name = payment_intent.metadata.get('name', 'Anonymous')
+
                 if not email:
                     logger.warning("No email found in payment intent, skipping payment record creation")
                     return HttpResponse(status=200)
@@ -1424,21 +1443,41 @@ class PaymentViewSet(viewsets.ModelViewSet):
                     'amount': payment_intent.amount / 100,
                     'currency': payment_intent.currency,
                     'status': 'succeeded',
-                    'payment_type': payment_intent.metadata.get('payment_type', 'one_time_donation'),
+                    'payment_type': payment_type,
                     'payment_method': payment_method_type
                 }
-                Payment.objects.create(**payment_data)
+                payment = Payment.objects.create(**payment_data)
 
-                # Send confirmation email
+                # If cotisation, update/create cotisation and user status
+                if payment_type == 'cotisation':
+                    from django.utils import timezone
+                    user = User.objects.filter(email=email).first()
+                    if user:
+                        # Find or create cotisation
+                        cotisation, created = Cotisation.objects.get_or_create(user_id=user)
+                        now = timezone.now()
+                        cotisation.last_payment_date = now
+                        cotisation.expiry_date = now + timedelta(days=365)
+                        cotisation.status = True
+                        cotisation.save()
+                        # Link payment to cotisation
+                        payment.cotisation = cotisation
+                        payment.user = user
+                        payment.save()
+                        # Set user status to active
+                        user.status = True
+                        user.save()
+
+                # Send confirmation email (adapt template for cotisation)
                 email_data = {
                     'stripe_id': payment_intent.id,
                     'amount': payment_intent.amount / 100,
                     'currency': payment_intent.currency,
                     'email': email,
-                    'name': payment_intent.metadata.get('name', 'Anonymous'),
-                    'payment_type': payment_intent.metadata.get('payment_type', 'one_time_donation'),
+                    'name': name,
+                    'payment_type': payment_type,
                     'payment_method': payment_method_type,
-                    'address': payment_intent.metadata.get('address')
+                    'address': address
                 }
                 send_payment_confirmation_email(email_data)
 
@@ -1510,6 +1549,40 @@ class PaymentViewSet(viewsets.ModelViewSet):
                 {'error': 'Failed to download receipt'},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
+
+    @action(detail=False, methods=['post'], url_path='membership_renewal_intent', permission_classes=[IsAuthenticated])
+    def membership_renewal_intent(self, request):
+        """Create a payment intent for membership renewal (cotisation)"""
+        user = request.user
+        address = request.data.get('address')
+        if not address:
+            return Response({'error': 'Address is required'}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Check for active cotisation
+        from django.utils import timezone
+        cotisation = Cotisation.objects.filter(user_id=user).first()
+        if cotisation and cotisation.status and cotisation.expiry_date and cotisation.expiry_date > timezone.now():
+            return Response({'error': 'You already have an active membership. You cannot pay for a new one until your current membership expires.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Create payment intent for 50 CHF
+        try:
+            payment_intent = stripe.PaymentIntent.create(
+                amount=5000,  # 50 CHF in cents
+                currency='chf',
+                payment_method_types=['card', 'twint', 'paypal'],
+                metadata={
+                    'payment_type': 'cotisation',
+                    'name': f'{user.first_name} {user.last_name}',
+                    'email': user.email,
+                    'address': address
+                }
+            )
+            return Response({
+                'clientSecret': payment_intent.client_secret,
+                'payment_intent_id': payment_intent.id
+            })
+        except Exception as e:
+            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
 @api_view(['GET'])
 @permission_classes([AllowAny])

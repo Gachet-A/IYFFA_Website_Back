@@ -219,7 +219,7 @@ class CotisationSerializer(serializers.ModelSerializer):
     """
     class Meta:
         model = Cotisation
-        fields = '__all__'
+        fields = ['id', 'user_id', 'last_payment_date', 'expiry_date', 'status']
 
 class PaymentSerializer(serializers.ModelSerializer):
     user = UserSerializer(read_only=True)

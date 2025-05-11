@@ -196,12 +196,16 @@ class Image(models.Model):
 # Cotisation model 
 class Cotisation(models.Model):
     id = models.AutoField(primary_key=True)  # Auto-incrementing PK
-    type = models.CharField(max_length=45)
-    amount = models.FloatField()
-    user_id = models.ForeignKey(User, on_delete=models.CASCADE, db_column="user_id")
+    user_id = models.ForeignKey(User, on_delete=models.CASCADE, db_column="user_id", unique=True)
+    last_payment_date = models.DateTimeField(null=True, blank=True)
+    expiry_date = models.DateTimeField(null=True, blank=True)
+    status = models.BooleanField(default=False)  # False = inactive, True = active
 
     class Meta:
         db_table = 'ifa_cotisation' # Define table name
+        constraints = [
+            models.UniqueConstraint(fields=['user_id'], name='unique_cotisation_per_user')
+        ]
 
 # Payment model
 class Payment(models.Model):
