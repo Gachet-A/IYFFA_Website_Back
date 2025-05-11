@@ -263,15 +263,17 @@ class CotisationSerializer(serializers.ModelSerializer):
     """
     class Meta:
         model = Cotisation
-        fields = '__all__'
+        fields = ['id', 'user_id', 'last_payment_date', 'expiry_date', 'status']
 
 class PaymentSerializer(serializers.ModelSerializer):
+    user = UserSerializer(read_only=True)
+    
     class Meta:
         model = Payment
         fields = [
             'id', 'user', 'cotisation', 'stripe_payment_id', 'amount', 
             'currency', 'status', 'payment_type', 'payment_method', 
             'transaction_id', 'description', 'subscription_id', 
-            'creation_time', 'update_time'
+            'creation_time', 'update_time', 'receipt_pdf_path'
         ]
         read_only_fields = ['id', 'creation_time', 'update_time']

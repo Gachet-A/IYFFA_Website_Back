@@ -6,7 +6,7 @@ from .views import (
     EventViewSet, ImageViewSet, CotisationViewSet, LoginView, LogoutView,
     RefreshTokenView, UserStatsView, VerifyOTPView, Enable2FAView, Disable2FAView, Verify2FASetupView,
     PaymentViewSet, RegisterView, ApproveUserView,
-    RequestPasswordResetView, ResetPasswordView, SetupPasswordView
+    RequestPasswordResetView, ResetPasswordView, SetupPasswordView, payment_status
 )
 from drf_yasg.views import get_schema_view
 from drf_yasg import openapi
@@ -73,6 +73,8 @@ urlpatterns = [
     path('create_monthly_subscription/', PaymentViewSet.as_view({'post': 'create_subscription'}), name='create-monthly-subscription'),
     path('webhook/', PaymentViewSet.as_view({'post': 'webhook'}), name='stripe-webhook'),
     path('cancel_subscription/<str:pk>/', PaymentViewSet.as_view({'post': 'cancel_subscription'}), name='cancel-subscription'),
+    path('payment-status/', payment_status, name='payment-status'),
+    path('membership_renewal_intent/', PaymentViewSet.as_view({'post': 'membership_renewal_intent'}), name='membership-renewal-intent'),
 
     # Documentation URLs
     path('docs/swagger<format>/', schema_view.without_ui(cache_timeout=0), name='schema-json'),
