@@ -35,6 +35,7 @@ import json
 import logging
 from django.db import models
 from django.utils import timezone
+import re
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -981,7 +982,7 @@ class VerifyOTPView(APIView):
     def post(self, request):
         """Verify email OTP and return JWT tokens if valid"""
         email = request.data.get("email")
-        otp = request.data.get("otp")
+        otp = request.data.get("otp") or request.data.get("verification_code")
         try:
             user = User.objects.get(email=email)
             
@@ -1009,6 +1010,7 @@ class VerifyOTPView(APIView):
                 
         except User.DoesNotExist:
             return Response({"error": "User not found"}, status=404)
+
 
 class Enable2FAView(APIView):
     """Enable two-factor authentication for a user"""
@@ -1778,6 +1780,23 @@ class RequestPasswordResetView(APIView):
                 {'error': 'An error occurred. Please try again.'},
                 status=status.HTTP_400_BAD_REQUEST
             )
+            
+def is_strong_password(password):
+    """
+    Validate the strength of a password.
+    Returns None if the password is strong, otherwise returns an error message.
+    """
+    if len(password) < 8:
+        return "Password must be at least 8 characters long"
+    if not any(char.isdigit() for char in password):
+        return "Password must contain at least one number"
+    if not any(char.isupper() for char in password):
+        return "Password must contain at least one uppercase letter"
+    if not any(char.islower() for char in password):
+        return "Password must contain at least one lowercase letter"
+    if not re.search(r"[!@#$%^&*(),.?\":{}|<>]", password):
+        return "Password must contain at least one special character"
+    return None
 
 class ResetPasswordView(APIView):
     """Handle password reset with token verification"""
@@ -1829,6 +1848,7 @@ class ResetPasswordView(APIView):
                 {'error': 'An error occurred while validating the reset link'},
                 status=status.HTTP_400_BAD_REQUEST
             )
+            
     
     def post(self, request):
         """Verify token and set new password"""
@@ -1836,69 +1856,62 @@ class ResetPasswordView(APIView):
             email = request.data.get('email')
             token = request.data.get('token')
             new_password = request.data.get('password')
-            
-            if not all([email, token, new_password]):
-                return Response(
-                    {'error': 'Missing required fields'},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-            
-            # Validate password strength - only check length and numbers
-            if len(new_password) < 8:
-                return Response(
-                    {'error': 'Password must be at least 8 characters long'},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-            
-            if not any(char.isdigit() for char in new_password):
-                return Response(
-                    {'error': 'Password must contain at least one number'},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-            
+
+            # Log the request data
+            logger.info(f"Reset password request received: {request.data}")
+
+            # Validate required fields
+            if not email:
+                return Response({'error': 'Email is required'}, status=status.HTTP_400_BAD_REQUEST)
+            if not token:
+                return Response({'error': 'Token is required'}, status=status.HTTP_400_BAD_REQUEST)
+            if not new_password:
+                return Response({'error': 'Password is required'}, status=status.HTTP_400_BAD_REQUEST)
+
+            # Validate password strength
+            password_error = is_strong_password(new_password)
+            if password_error:
+                return Response({'error': password_error}, status=status.HTTP_400_BAD_REQUEST)
+
+            # Get the user
             user = get_object_or_404(User, email=email)
-            
+
+            # Log token details
+            logger.info(f"Token received: {token}, Token stored: {user.otp_secret}")
+            logger.info(f"Token creation time: {user.otp_secret_created_at}")
+
             # Check if token exists and matches
             if not user.otp_secret or user.otp_secret != token:
-                return Response(
-                    {'error': 'Invalid or expired token'},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-            
+                return Response({'error': 'Invalid token. Please request a new password reset.'}, status=status.HTTP_400_BAD_REQUEST)
+
             # Check if token is expired (30 minutes)
             if not user.otp_secret_created_at or (timezone.now() - user.otp_secret_created_at) > timedelta(minutes=30):
                 # Clear expired token
                 user.otp_secret = None
                 user.otp_secret_created_at = None
                 user.save()
-                return Response(
-                    {'error': 'Token has expired'},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-            
+                return Response({'error': 'Token has expired. Please request a new password reset.'}, status=status.HTTP_400_BAD_REQUEST)
+
             # Set new password and clear token
             user.set_password(new_password)
             user.otp_secret = None
             user.otp_secret_created_at = None
             user.save()
-            
+
             # Log successful password reset
             logger.info(f"Password reset completed for user {user.email}")
-            
+
             return Response({
                 "message": "Password reset successful. You can now log in with your new password."
             })
-            
+
         except User.DoesNotExist:
-            return Response(
-                {'error': 'User not found'},
-                status=status.HTTP_404_NOT_FOUND
-            )
+            return Response({'error': 'User not found'}, status=status.HTTP_404_NOT_FOUND)
         except Exception as e:
-            logger.error(f"Error in password reset: {str(e)}")
+            logger.error(f"Unexpected error during password reset: {str(e)}")
             return Response(
-                {'error': 'An error occurred during password reset. Please try again.'},
-                status=status.HTTP_400_BAD_REQUEST
+                {'error': 'An unexpected error occurred. Please try again later.'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
 class SetupPasswordView(APIView):

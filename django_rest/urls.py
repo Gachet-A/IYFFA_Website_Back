@@ -48,6 +48,7 @@ urlpatterns = [
     path('auth/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
     path('auth/refresh-token/', RefreshTokenView.as_view(), name='refresh-token'),
     path('auth/verify-otp/', VerifyOTPView.as_view(), name='verify-otp'),
+    path('auth/verify-reset-code/', VerifyOTPView.as_view(), name='verify-reset-code'),
     
     # Registration and approval URLs
     path('auth/register/', RegisterView.as_view(), name='register'),
@@ -57,6 +58,7 @@ urlpatterns = [
     # Password reset URLs (consolidated)
     path('auth/request-password-reset/', RequestPasswordResetView.as_view(), name='request-password-reset'),
     path('auth/reset-password/', ResetPasswordView.as_view(), name='reset-password'),
+    
     
     # 2FA management URLs
     path('auth/2fa/enable/', Enable2FAView.as_view(), name='enable-2fa'),
