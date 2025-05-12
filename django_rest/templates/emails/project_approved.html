@@ -1,0 +1,21 @@
+{% extends "emails/base.html" %}
+
+{% block title %}Project Approved - IYFFA{% endblock %}
+
+{% block header %}Project Approved{% endblock %}
+
+{% block content %}
+<p>Dear {{ name }},</p>
+
+<p>We are pleased to inform you that your project "{{ project_title }}" has been approved by the IYFFA team.</p>
+
+<p>Your project is now visible on the projects page and can be viewed by all members.</p>
+
+<div class="button-container">
+    <a href="http://localhost:8080/projects" class="button">View Projects</a>
+</div>
+
+<p>Thank you for your contribution to the IYFFA community!</p>
+
+<p>Best regards,<br>The IYFFA Team</p>
+{% endblock %} 

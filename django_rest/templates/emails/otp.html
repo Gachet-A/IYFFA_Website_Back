@@ -1,0 +1,21 @@
+{% extends "emails/base.html" %}
+
+{% block title %}Your Login Code - IYFFA{% endblock %}
+
+{% block header %}Login Verification{% endblock %}
+
+{% block content %}
+<p>Hello {{ name }},</p>
+
+<p>Please use the following code to complete your login:</p>
+
+<div style="background-color: rgba(30, 174, 219, 0.1); padding: 1rem; border-radius: 0.5rem; text-align: center; margin: 1.5rem 0;">
+    <p style="margin: 0; font-size: 1.5rem; letter-spacing: 0.5rem; color: #1EAEDB;">{{ otp }}</p>
+</div>
+
+<p>This code will expire in 5 minutes for security reasons.</p>
+
+<p>If you did not attempt to log in, please ignore this email or contact us if you have concerns.</p>
+
+<p class="text-muted">This is an automated message. Please do not reply to this email.</p>
+{% endblock %} 

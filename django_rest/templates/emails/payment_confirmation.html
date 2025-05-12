@@ -1,0 +1,23 @@
+{% extends "emails/base.html" %}
+
+{% block title %}Payment Confirmation - IYFFA{% endblock %}
+
+{% block header %}Thank You for Your Support!{% endblock %}
+
+{% block content %}
+    <p>Dear {{ name }},</p>
+    
+    <p>We are pleased to confirm that we have received your payment of {{ amount }} {{ currency }}.</p>
+    
+    {% if payment_type == 'monthly_donation' %}
+        <p>Your monthly donation of {{ amount }} {{ currency }} will be automatically processed each month.</p>
+        <p>To manage your subscription, including cancellation, please visit:</p>
+        <p><a href="{{ cancel_url }}" class="button">Manage Subscription</a></p>
+    {% endif %}
+    
+    <p>Your support helps us continue our mission and make a difference in the lives of many.</p>
+    
+    <p>If you have any questions about your payment or need assistance, please don't hesitate to contact us.</p>
+    
+    <p>With gratitude,<br>The IYFFA Team</p>
+{% endblock %} 

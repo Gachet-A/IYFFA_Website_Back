@@ -1,0 +1,30 @@
+{% extends "emails/base.html" %}
+
+{% block title %}Verification Code - IYFFA{% endblock %}
+
+{% block header %}Your Verification Code{% endblock %}
+
+{% block content %}
+    <p>Dear {{ name }},</p>
+    
+    <p>Your verification code is:</p>
+    
+    <div style="text-align: center; margin: 2rem 0;">
+        <span style="
+            display: inline-block;
+            padding: 1rem 2rem;
+            background-color: #f3f4f6;
+            border-radius: 0.5rem;
+            font-size: 1.5rem;
+            font-weight: bold;
+            letter-spacing: 0.5rem;
+            color: #1a1a1a;
+        ">{{ otp }}</span>
+    </div>
+    
+    <p>This code will expire in 10 minutes. Please use it to complete your login or 2FA setup.</p>
+    
+    <p>If you didn't request this code, please ignore this email or contact support if you have concerns.</p>
+    
+    <p>Best regards,<br>The IYFFA Team</p>
+{% endblock %} 
