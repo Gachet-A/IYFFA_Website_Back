@@ -1279,153 +1279,6 @@ def send_payment_confirmation_email(payment_data):
             payment.receipt_generated_at = datetime.now()
             payment.save()
 
-        # Subject and message
-        if is_cotisation:
-            subject = "Thank you for renewing your membership!"
-            html_message = f"""
-            <html>
-            <head>...</head>
-            <body>
-                <div class=\"header\">
-                    <h1>Membership Renewal Confirmation</h1>
-                </div>
-                <div class=\"content\">
-                    <p>Dear {payment_data.get('name', 'Valued Member')},</p>
-                    <p>We are pleased to confirm your membership renewal of:</p>
-                    <div class=\"amount\">
-                        {payment_data.get('amount')} {payment_data.get('currency')}
-                    </div>
-                    <p>Your membership renewal through {payment_data.get('payment_method')} has been successfully processed.</p>
-                    <p>Your membership is now active for one year from today.</p>
-                    <p>Please find attached your membership renewal receipt for your records.</p>
-                    <p>Thank you for being part of our community!</p>
-                    <div class=\"footer\">
-                        <p>If you have any questions, please contact us at {settings.DEFAULT_FROM_EMAIL}</p>
-                        <p>Best regards,<br>The IYFFA Team</p>
-                    </div>
-                </div>
-            </body>
-            </html>
-            """
-            plain_message = f"""
-            Dear {payment_data.get('name', 'Valued Member')},
-
-            Thank you for your membership renewal of {payment_data.get('amount')} {payment_data.get('currency')} through {payment_data.get('payment_method')}.
-            Your membership is now active for one year from today.
-
-            Please find attached your membership renewal receipt.
-
-            If you have any questions, please contact us at {settings.DEFAULT_FROM_EMAIL}
-
-            Best regards,
-            IYFFA Team
-            """
-        elif payment_data.get('payment_type') == 'monthly_donation':
-            subject = "Thank you for your Monthly Support!"
-            html_message = f"""
-            <html>
-            <head>...</head>
-            <body>
-                <div class=\"header\">
-                    <h1>Monthly Support Confirmation</h1>
-                </div>
-                <div class=\"content\">
-                    <p>Dear {payment_data.get('name', 'Valued Donor')},</p>
-                    <p>We are incredibly grateful for your monthly support of:</p>
-                    <div class=\"amount\">
-                        {payment_data.get('amount')} {payment_data.get('currency')}
-                    </div>
-                    <p>Your monthly donation through {payment_data.get('payment_method')} has been successfully processed.</p>
-                    <p>Your monthly donation of {payment_data.get('amount')} {payment_data.get('currency')} will be automatically processed each month.</p>
-                    <p>To manage your subscription, you can:</p>
-                    <a href=\"{payment_data.get('cancel_url', '#')}\" class=\"button\">Manage Your Subscription</a>
-                    <p>Please find attached your donation receipt for your records.</p>
-                    <p>Your support makes a real difference in our mission. Thank you for being part of our community!</p>
-                    <div class=\"footer\">
-                        <p>If you have any questions, please don't hesitate to contact us at {settings.DEFAULT_FROM_EMAIL}</p>
-                        <p>Best regards,<br>The IYFFA Team</p>
-                    </div>
-                </div>
-            </body>
-            </html>
-            """
-            plain_message = f"""
-            Dear {payment_data.get('name', 'Valued Donor')},
-
-            Thank you for your monthly support of {payment_data.get('amount')} {payment_data.get('currency')} through {payment_data.get('payment_method')}.
-            Your monthly donation of {payment_data.get('amount')} {payment_data.get('currency')} will be automatically processed each month.
-            To manage your subscription (including cancellation), click here: {payment_data.get('cancel_url', '#')}
-
-            Please find attached your donation receipt.
-
-            If you have any questions, please contact us at {settings.DEFAULT_FROM_EMAIL}
-
-            Best regards,
-            IYFFA Team
-            """
-        else:
-            subject = f"Thank you for your Gift!"
-            html_message = f"""
-            <html>
-            <head>...</head>
-            <body>
-                <div class=\"header\">
-                    <h1>Thank You for Your Support!</h1>
-                </div>
-                <div class=\"content\">
-                    <p>Dear {payment_data.get('name', 'Valued Donor')},</p>
-                    <p>We are incredibly grateful for your generous gift of:</p>
-                    <div class=\"amount\">
-                        {payment_data.get('amount')} {payment_data.get('currency')}
-                    </div>
-                    <p>Your donation through {payment_data.get('payment_method')} has been successfully processed.</p>
-                    <p>Please find attached your donation receipt for your records.</p>
-                    <p>Your support makes a real difference in our mission. Thank you for being part of our community!</p>
-                    <div class=\"footer\">
-                        <p>If you have any questions, please don't hesitate to contact us at {settings.DEFAULT_FROM_EMAIL}</p>
-                        <p>Best regards,<br>The IYFFA Team</p>
-                    </div>
-                </div>
-            </body>
-            </html>
-            """
-            plain_message = f"""
-            Dear {payment_data.get('name', 'Valued Donor')},
-
-            Thank you for your gift of {payment_data.get('amount')} {payment_data.get('currency')} through {payment_data.get('payment_method')}
-
-            Please find attached your donation receipt.
-
-            If you have any questions, please contact us at {settings.DEFAULT_FROM_EMAIL}
-
-            Best regards,
-            IYFFA Team
-            """
-
-        logger.info(f"Sending email with subject: {subject}")
-        logger.info(f"From email: {settings.DEFAULT_FROM_EMAIL}")
-        logger.info(f"To email: {payment_data.get('email')}")
-
-        # Send email with PDF attachment
-        email = EmailMessage(
-            subject,
-            plain_message,
-            settings.DEFAULT_FROM_EMAIL,
-            [payment_data.get('email')]
-        )
-        
-        # Set HTML content
-        email.content_subtype = "html"
-        email.body = html_message
-        
-        # Attach the PDF
-        with open(pdf_path, 'rb') as f:
-            if is_cotisation:
-                email.attach('membership_renewal_receipt.pdf', f.read(), 'application/pdf')
-            else:
-                email.attach('donation_receipt.pdf', f.read(), 'application/pdf')
-        
-        result = email.send(fail_silently=False)
         # Prepare the context for the template
         context = {
             'name': payment_data.get('name', 'Valued Donor'),
@@ -1435,15 +1288,33 @@ def send_payment_confirmation_email(payment_data):
             'cancel_url': payment_data.get('cancel_url')
         }
 
-        # Send the HTML email
-        success = send_html_email(
-            template_name='payment_confirmation',
-            context=context,
-            subject=f"Thank you for your Gift!",
-            recipient_list=[payment_data.get('email')]
-        )
+        subject = "Thank you for your Gift!"
+        if is_cotisation:
+            subject = "Thank you for renewing your membership!"
+        elif payment_data.get('payment_type') == 'monthly_donation':
+            subject = "Thank you for your Monthly Support!"
 
-        if success:
+        # Render the HTML content from the template
+        html_message = render_to_string('emails/payment_confirmation.html', context)
+
+        # Send email with PDF attachment and HTML body
+        email = EmailMessage(
+            subject,
+            html_message,
+            settings.DEFAULT_FROM_EMAIL,
+            [payment_data.get('email')]
+        )
+        email.content_subtype = "html"
+
+        # Attach the PDF
+        with open(pdf_path, 'rb') as f:
+            if is_cotisation:
+                email.attach('membership_renewal_receipt.pdf', f.read(), 'application/pdf')
+            else:
+                email.attach('donation_receipt.pdf', f.read(), 'application/pdf')
+
+        result = email.send(fail_silently=False)
+        if result:
             logger.info(f"Confirmation email sent successfully to {payment_data.get('email')}")
             return True
         else:
