@@ -250,10 +250,7 @@ class UserViewSet(viewsets.ModelViewSet):
             
             # Supprimer l'utilisateur
             instance.delete()
-            return Response(
-                {"message": "Utilisateur supprimé avec succès"},
-                status=status.HTTP_204_NO_CONTENT
-            )
+            return Response(status=status.HTTP_204_NO_CONTENT)
             
         except Exception as e:
             return Response(
@@ -1844,16 +1841,18 @@ class ApproveUserView(APIView):
                     status=status.HTTP_400_BAD_REQUEST
                 )
             
-            # Generate a temporary token for password setup
-            token = ''.join([str(random.randint(0, 9)) for _ in range(6)])
+            # Generate a secure token
+            token = ''.join([str(random.randint(0, 9)) for _ in range(32)])
             user.otp_secret = token
             user.save()
+            
+            # Generate the setup URL
+            setup_url = f"{settings.FRONTEND_URL}/setup-password?token={token}&email={user.email}&type=reset"
             
             # Send password setup email
             context = {
                 'name': f"{user.first_name} {user.last_name}",
-                'token': token,
-                'email': user.email
+                'setup_url': setup_url
             }
             
             success = send_html_email(
@@ -1866,6 +1865,7 @@ class ApproveUserView(APIView):
             if not success:
                 # Revert token if email sending fails
                 user.otp_secret = None
+                user.otp_secret_created_at = None
                 user.save()
                 return Response(
                     {'error': 'Failed to send password setup email'},
@@ -1901,86 +1901,6 @@ class ApproveUserView(APIView):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-class RequestPasswordResetView(APIView):
-    """Handle password reset requests"""
-    permission_classes = [AllowAny]
-    
-    def post(self, request):
-        """Send password reset email"""
-        try:
-            email = request.data.get('email')
-            if not email:
-                return Response(
-                    {'error': 'Email is required'},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-            
-            try:
-                user = User.objects.get(email=email)
-            except User.DoesNotExist:
-                # Don't reveal that the user doesn't exist
-                return Response({
-                    'message': 'If an account exists with this email, you will receive a password reset link.'
-                })
-            
-            # Generate a temporary token for password reset
-            token = ''.join([str(random.randint(0, 9)) for _ in range(6)])
-            user.otp_secret = token
-            user.otp_secret_created_at = datetime.now()
-            user.save()
-            
-            # Send password reset email
-            context = {
-                'name': f"{user.first_name} {user.last_name}",
-                'token': token,
-                'email': user.email
-            }
-            
-            success = send_html_email(
-                template_name='reset_password',
-                context=context,
-                subject='Reset Your Password',
-                recipient_list=[user.email]
-            )
-            
-            if not success:
-                # Revert token if email sending fails
-                user.otp_secret = None
-                user.otp_secret_created_at = None
-                user.save()
-                return Response(
-                    {'error': 'Failed to send password reset email'},
-                    status=status.HTTP_500_INTERNAL_SERVER_ERROR
-                )
-            
-            return Response({
-                'message': 'If an account exists with this email, you will receive a password reset link.'
-            })
-            
-        except Exception as e:
-            logger.error(f"Error in password reset request: {str(e)}")
-            return Response(
-                {'error': 'An error occurred. Please try again.'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-            
-def is_strong_password(password):
-    """
-    Validate the strength of a password.
-    Returns None if the password is strong, otherwise returns an error message.
-    """
-    if len(password) < 8:
-        return "Password must be at least 8 characters long"
-    if not any(char.isdigit() for char in password):
-        return "Password must contain at least one number"
-    if not any(char.isupper() for char in password):
-        return "Password must contain at least one uppercase letter"
-    if not any(char.islower() for char in password):
-        return "Password must contain at least one lowercase letter"
-    if not re.search(r"[!@#$%^&*(),.?\":{}|<>]", password):
-        return "Password must contain at least one special character"
-    return None
-
 class ResetPasswordView(APIView):
     """Handle password reset with token verification"""
     permission_classes = [AllowAny]
@@ -2012,8 +1932,8 @@ class ResetPasswordView(APIView):
                     status=status.HTTP_400_BAD_REQUEST
                 )
             
-            # Check if token is expired (30 minutes)
-            if not user.otp_secret_created_at or (timezone.now() - user.otp_secret_created_at) > timedelta(minutes=30):
+            # Only check expiration for password reset tokens (which have otp_secret_created_at)
+            if user.otp_secret_created_at and (timezone.now() - user.otp_secret_created_at) > timedelta(minutes=30):
                 # Clear expired token
                 user.otp_secret = None
                 user.otp_secret_created_at = None
@@ -2067,8 +1987,8 @@ class ResetPasswordView(APIView):
             if not user.otp_secret or user.otp_secret != token:
                 return Response({'error': 'Invalid token. Please request a new password reset.'}, status=status.HTTP_400_BAD_REQUEST)
 
-            # Check if token is expired (30 minutes)
-            if not user.otp_secret_created_at or (timezone.now() - user.otp_secret_created_at) > timedelta(minutes=30):
+            # Only check expiration for password reset tokens (which have otp_secret_created_at)
+            if user.otp_secret_created_at and (timezone.now() - user.otp_secret_created_at) > timedelta(minutes=30):
                 # Clear expired token
                 user.otp_secret = None
                 user.otp_secret_created_at = None
@@ -2100,6 +2020,42 @@ class ResetPasswordView(APIView):
 class SetupPasswordView(APIView):
     """Handle password setup after user approval"""
     permission_classes = [AllowAny]
+    
+    def get(self, request):
+        """Validate setup token"""
+        try:
+            token = request.query_params.get('token')
+            email = request.query_params.get('email')
+            
+            if not token or not email:
+                return Response(
+                    {'error': 'Token and email are required'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            try:
+                user = User.objects.get(email=email)
+            except User.DoesNotExist:
+                return Response(
+                    {'error': 'Invalid setup link'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            # Check if token exists and matches
+            if not user.otp_secret or user.otp_secret != token:
+                return Response(
+                    {'error': 'Invalid or expired token'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            return Response({'valid': True})
+            
+        except Exception as e:
+            logger.error(f"Error validating setup token: {str(e)}")
+            return Response(
+                {'error': 'An error occurred while validating the setup link'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
     
     def post(self, request):
         """Set up password for newly approved user"""
@@ -2139,6 +2095,7 @@ class SetupPasswordView(APIView):
             # Set new password and clear token
             user.set_password(new_password)
             user.otp_secret = None
+            user.otp_secret_created_at = None
             user.save()
             
             # Log successful password setup
@@ -2157,5 +2114,96 @@ class SetupPasswordView(APIView):
             logger.error(f"Error in password setup: {str(e)}")
             return Response(
                 {'error': 'An error occurred during password setup. Please try again.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+def is_strong_password(password):
+    """
+    Validate the strength of a password.
+    Returns None if the password is strong, otherwise returns an error message.
+    """
+    if len(password) < 8:
+        return "Password must be at least 8 characters long"
+    if not any(char.isdigit() for char in password):
+        return "Password must contain at least one number"
+    if not any(char.isupper() for char in password):
+        return "Password must contain at least one uppercase letter"
+    if not any(char.islower() for char in password):
+        return "Password must contain at least one lowercase letter"
+    return None
+
+class RequestPasswordResetView(APIView):
+    """Handle password reset requests"""
+    permission_classes = [AllowAny]
+    
+    def post(self, request):
+        """Send password reset email"""
+        try:
+            email = request.data.get('email')
+            if not email:
+                return Response(
+                    {'error': 'Email is required'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            try:
+                user = User.objects.get(email=email)
+            except User.DoesNotExist:
+                # Don't reveal that the user doesn't exist
+                return Response({
+                    'message': 'If an account exists with this email, you will receive a password reset link.'
+                })
+            
+            # Generate a secure token
+            token = ''.join([str(random.randint(0, 9)) for _ in range(32)])
+            user.otp_secret = token
+            user.otp_secret_created_at = timezone.now()
+            user.save()
+            
+            # Generate the reset URL
+            reset_url = f"{settings.FRONTEND_URL}/setup-password?token={token}&email={user.email}&type=reset"
+            
+            # Send password reset email
+            context = {
+                'name': f"{user.first_name} {user.last_name}",
+                'reset_url': reset_url
+            }
+            
+            try:
+                success = send_html_email(
+                    template_name='reset_password',
+                    context=context,
+                    subject='Reset Your Password',
+                    recipient_list=[user.email]
+                )
+                
+                if not success:
+                    # Revert token if email sending fails
+                    user.otp_secret = None
+                    user.otp_secret_created_at = None
+                    user.save()
+                    return Response(
+                        {'error': 'Failed to send password reset email. Please try again later.'},
+                        status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                    )
+            except Exception as e:
+                logger.error(f"Error sending password reset email: {str(e)}")
+                # Revert token if email sending fails
+                user.otp_secret = None
+                user.otp_secret_created_at = None
+                user.save()
+                return Response(
+                    {'error': 'Failed to send password reset email. Please try again later.'},
+                    status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                )
+            
+            return Response({
+                'message': 'If an account exists with this email, you will receive a password reset link.'
+            })
+            
+        except Exception as e:
+            logger.error(f"Error in password reset request: {str(e)}")
+            return Response(
+                {'error': 'An error occurred. Please try again.'},
                 status=status.HTTP_400_BAD_REQUEST
             )

@@ -5,8 +5,7 @@ from .views import (
     UserViewSet, ArticleViewSet, ProjectViewSet, DocumentViewSet, 
     EventViewSet, ImageViewSet, CotisationViewSet, LoginView, LogoutView,
     RefreshTokenView, UserStatsView, VerifyOTPView, Enable2FAView, Disable2FAView, Verify2FASetupView,
-    PaymentViewSet, RegisterView, ApproveUserView,
-    RequestPasswordResetView, ResetPasswordView, SetupPasswordView, payment_status
+    PaymentViewSet, RegisterView, ApproveUserView, ResetPasswordView, SetupPasswordView, RequestPasswordResetView, payment_status
 )
 from drf_yasg.views import get_schema_view
 from drf_yasg import openapi
