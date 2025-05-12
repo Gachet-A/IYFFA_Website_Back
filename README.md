@@ -35,7 +35,11 @@ source backend_venv/bin/activate
 pip install -r requirements.txt
 ```
 
-### 4. Install and Configure MariaDB
+### 4. Create migration folder
+- Create directory django_rest/migrations
+- Create empty python file django_rest/migrations/`__init__.py`
+
+### 5. Install and Configure MariaDB
 
 #### Install MariaDB (if not installed)
 
@@ -65,7 +69,7 @@ sudo mysql_secure_installation
 ```
 Follow the prompts to set a root password and remove insecure defaults.
 
-### 5. Create the Database and User
+### 6. Create the Database and User
 
 #### Login to MariaDB
 ```sh
@@ -81,7 +85,7 @@ FLUSH PRIVILEGES;
 EXIT;
 ```
 
-### 6. Store Database Credentials in `.env` File
+### 7. Store Database Credentials in `.env` File
 
 Create a `.env` file in the project root and add the following:
 ```ini
@@ -92,17 +96,18 @@ DB_HOST=localhost
 DB_PORT=3306
 ```
 
-### 7. Apply Migrations
+### 8. Apply Migrations
 ```sh
+python manage.py makemigrations
 python manage.py migrate
 ```
 
-### 8. Run the Development Server
+### 9. Run the Development Server
 ```sh
 python manage.py runserver
 ```
 
-### 9. Access the API
+### 10. Access the API
 - Open `http://127.0.0.1:8000/api/` in your browser or use **Postman** to test API endpoints.
 
 ## Notes
